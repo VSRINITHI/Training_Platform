@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from typing import Optional, List, Any
 from datetime import datetime
 from decimal import Decimal
@@ -13,16 +13,25 @@ from app.models.enums import QuizType, QuestionType, AIDraftStatus
 class QuestionOptionBase(CoreBaseModel):
     option_text: str = Field(..., min_length=1)
     is_correct: bool = False
-    order_index: int = Field(..., ge=1)
+    order_index: Optional[int] = Field(default=None, ge=1)
 
 
 class QuestionOptionCreate(QuestionOptionBase):
     pass
 
 
-class QuestionOptionResponse(QuestionOptionBase):
+class QuestionOptionUpdate(CoreBaseModel):
+    option_text: Optional[str] = Field(None, min_length=1)
+    is_correct: Optional[bool] = None
+    order_index: Optional[int] = Field(None, ge=1)
+
+
+class QuestionOptionResponse(CoreBaseModel):
     id: uuid.UUID
     question_id: uuid.UUID
+    option_text: str
+    is_correct: bool
+    order_index: int
 
 
 class QuestionOptionPublicResponse(CoreBaseModel):
@@ -44,12 +53,12 @@ class QuestionBase(CoreBaseModel):
     question_type: QuestionType = QuestionType.MCQ
     explanation: Optional[str] = None
     points: int = Field(default=1, ge=1)
-    order_index: int = Field(..., ge=1)
+    order_index: Optional[int] = Field(default=None, ge=1)
 
 
 class QuestionCreate(QuestionBase):
-    quiz_id: uuid.UUID
-    options: List[QuestionOptionCreate] = Field(..., min_length=2)
+    quiz_id: Optional[uuid.UUID] = None
+    options: Optional[List[QuestionOptionCreate]] = None
 
 
 class QuestionUpdate(CoreBaseModel):
@@ -60,15 +69,20 @@ class QuestionUpdate(CoreBaseModel):
     order_index: Optional[int] = Field(None, ge=1)
 
 
-class QuestionResponse(QuestionBase):
+class QuestionResponse(CoreBaseModel):
     id: uuid.UUID
     quiz_id: uuid.UUID
+    question_text: str
+    question_type: QuestionType
+    explanation: Optional[str] = None
+    points: int
+    order_index: int
     options: List[QuestionOptionResponse] = []
 
 
 class QuestionPublicResponse(CoreBaseModel):
     """
-    Question representation for learners taking the quiz (answers hidden).
+    Question representation for learners taking the quiz (answers & explanation hidden).
     """
     id: uuid.UUID
     quiz_id: uuid.UUID
@@ -158,6 +172,11 @@ class AIQuizDraftCreate(AIQuizDraftBase):
 class AIQuizDraftUpdate(CoreBaseModel):
     raw_llm_response: Optional[Any] = None
     status: Optional[AIDraftStatus] = None
+
+
+class AIQuizDraftReviewRequest(CoreBaseModel):
+    status: AIDraftStatus = Field(..., description="APPROVED or DISCARDED")
+    import_to_quiz: bool = Field(default=True, description="If APPROVED, import questions into the lesson quiz")
 
 
 class AIQuizDraftResponse(AIQuizDraftBase):

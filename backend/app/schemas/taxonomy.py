@@ -1,5 +1,5 @@
-﻿import uuid
-from typing import Optional, List
+import uuid
+from typing import Optional, List, Any
 from datetime import datetime
 from pydantic import Field
 from app.schemas.common import CoreBaseModel
@@ -41,15 +41,39 @@ class SubDomainUpdate(CoreBaseModel):
     description: Optional[str] = None
 
 
-class SubDomainResponse(SubDomainBase):
-    id: uuid.UUID
-    created_at: datetime
-
-
 class DomainResponse(DomainBase):
     id: uuid.UUID
     created_at: datetime
 
 
+class SubDomainResponse(SubDomainBase):
+    id: uuid.UUID
+    created_at: datetime
+
+
+class SubDomainDetailResponse(SubDomainResponse):
+    domain: Optional[DomainResponse] = None
+    published_course_count: int = 0
+
+
 class DomainWithSubDomainsResponse(DomainResponse):
     sub_domains: List[SubDomainResponse] = []
+
+
+class UserInterestDetailResponse(CoreBaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    sub_domain_id: uuid.UUID
+    created_at: datetime
+    sub_domain: Optional[SubDomainResponse] = None
+
+
+class TaxonomyTreeResponse(CoreBaseModel):
+    domains: List[DomainWithSubDomainsResponse] = []
+
+
+class PersonalizedDiscoveryResponse(CoreBaseModel):
+    is_personalized: bool
+    interest_sub_domain_ids: List[uuid.UUID] = []
+    matched_courses: List[Any] = []
+    total_matches: int = 0

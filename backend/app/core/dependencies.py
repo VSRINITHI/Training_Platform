@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 import logging
 from typing import Callable, Generator, List, Optional
 from fastapi import Depends, HTTPException, status
@@ -96,10 +96,18 @@ def get_current_user(
             db.rollback()
             user = db.query(User).filter(User.id == user_id).first()
             if not user:
+                logger.error(f"Failed to synchronize user profile for ID {user_id} after IntegrityError")
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to synchronize user profile",
                 )
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Unexpected error synchronizing user profile {user_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to synchronize user profile: {str(e)}",
+            )
     else:
         # Update user metadata if email or name changed
         updated = False

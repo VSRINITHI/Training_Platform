@@ -1,6 +1,7 @@
-﻿from functools import lru_cache
+from functools import lru_cache
 from pathlib import Path
-from pydantic import computed_field
+from typing import List, Optional, Union
+from pydantic import computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
@@ -20,8 +21,32 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
 
     # Supabase credentials
-    SUPABASE_URL: str
-    SUPABASE_SECRET_KEY: str
+    SUPABASE_URL: str = ""
+    # Supabase Project JWT Secret (from Supabase Dashboard -> Settings -> API -> JWT Settings)
+    SUPABASE_JWT_SECRET: Optional[str] = None
+    # Backward-compatible secret key / service role key
+    SUPABASE_SECRET_KEY: Optional[str] = None
+
+    # CORS configuration
+    BACKEND_CORS_ORIGINS: Union[str, List[str]] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
+    @property
+    def cors_origins(self) -> List[str]:
+        if isinstance(self.BACKEND_CORS_ORIGINS, str):
+            val = self.BACKEND_CORS_ORIGINS.strip()
+            if val.startswith("[") and val.endswith("]"):
+                import json
+                try:
+                    return json.loads(val)
+                except Exception:
+                    pass
+            return [i.strip() for i in val.split(",") if i.strip()]
+        return self.BACKEND_CORS_ORIGINS
 
     # PostgreSQL Database URL
     DATABASE_URL: str
@@ -31,6 +56,35 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_TIMEOUT: int = 30
     DB_POOL_RECYCLE: int = 1800
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def jwks_url(self) -> str:
+        """
+        Returns the Supabase JWKS endpoint URL for ES256 / ECC public keys.
+        """
+        if self.SUPABASE_URL:
+            return f"{self.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
+        return ""
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def jwt_issuer(self) -> str:
+        """
+        Returns the expected Supabase JWT issuer claim (iss).
+        """
+        if self.SUPABASE_URL:
+            return f"{self.SUPABASE_URL.rstrip('/')}/auth/v1"
+        return ""
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def jwt_secret(self) -> Optional[str]:
+        """
+        Returns the legacy Supabase JWT secret used to decode and verify HS256 tokens if configured.
+        Prioritizes SUPABASE_JWT_SECRET, falling back to SUPABASE_SECRET_KEY.
+        """
+        return self.SUPABASE_JWT_SECRET or self.SUPABASE_SECRET_KEY
 
     @computed_field  # type: ignore[misc]
     @property

@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from typing import Optional, List
 from datetime import datetime
 from pydantic import Field, model_validator
@@ -17,11 +17,11 @@ class LessonBase(CoreBaseModel):
     video_url: Optional[str] = None
     document_url: Optional[str] = None
     duration_minutes: int = Field(default=0, ge=0)
-    order_index: int = Field(..., ge=1)
+    order_index: Optional[int] = Field(default=None, ge=1)
 
 
 class LessonCreate(LessonBase):
-    module_id: uuid.UUID
+    module_id: Optional[uuid.UUID] = None
 
 
 class LessonUpdate(CoreBaseModel):
@@ -33,9 +33,15 @@ class LessonUpdate(CoreBaseModel):
     order_index: Optional[int] = Field(None, ge=1)
 
 
-class LessonResponse(LessonBase):
+class LessonResponse(CoreBaseModel):
     id: uuid.UUID
     module_id: uuid.UUID
+    title: str
+    content_body: Optional[str] = None
+    video_url: Optional[str] = None
+    document_url: Optional[str] = None
+    duration_minutes: int
+    order_index: int
     created_at: datetime
 
 
@@ -45,12 +51,12 @@ class LessonResponse(LessonBase):
 class ModuleBase(CoreBaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
-    order_index: int = Field(..., ge=1)
+    order_index: Optional[int] = Field(default=None, ge=1)
     is_required: bool = True
 
 
 class ModuleCreate(ModuleBase):
-    course_id: uuid.UUID
+    course_id: Optional[uuid.UUID] = None
 
 
 class ModuleUpdate(CoreBaseModel):
@@ -60,9 +66,13 @@ class ModuleUpdate(CoreBaseModel):
     is_required: Optional[bool] = None
 
 
-class ModuleResponse(ModuleBase):
+class ModuleResponse(CoreBaseModel):
     id: uuid.UUID
     course_id: uuid.UUID
+    title: str
+    description: Optional[str] = None
+    order_index: int
+    is_required: bool
     created_at: datetime
 
 
@@ -84,6 +94,7 @@ class CourseBase(CoreBaseModel):
 
 class CourseCreate(CourseBase):
     sub_domain_id: uuid.UUID
+    instructor_id: Optional[uuid.UUID] = Field(None, description="Admin only; defaults to current user")
 
 
 class CourseUpdate(CoreBaseModel):
@@ -108,3 +119,21 @@ class CourseDetailResponse(CourseResponse):
     instructor: Optional[UserResponse] = None
     sub_domain: Optional[SubDomainResponse] = None
     modules: List[ModuleDetailResponse] = []
+
+
+# ---------------------------------------------------------------------------
+# Reordering & Publishing Schemas
+# ---------------------------------------------------------------------------
+class OrderItem(CoreBaseModel):
+    id: uuid.UUID
+    order_index: int = Field(..., ge=1)
+
+
+class ReorderRequest(CoreBaseModel):
+    items: List[OrderItem] = Field(..., min_length=1)
+
+
+class CoursePublishResponse(CoreBaseModel):
+    id: uuid.UUID
+    is_published: bool
+    message: str

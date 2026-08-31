@@ -1,4 +1,4 @@
-﻿from app.schemas.common import CoreBaseModel, MessageResponse, PaginatedResponse
+from app.schemas.common import CoreBaseModel, MessageResponse, PaginatedResponse
 from app.schemas.user import (
     UserBase,
     UserCreate,
@@ -18,6 +18,10 @@ from app.schemas.taxonomy import (
     SubDomainCreate,
     SubDomainUpdate,
     SubDomainResponse,
+    SubDomainDetailResponse,
+    UserInterestDetailResponse,
+    TaxonomyTreeResponse,
+    PersonalizedDiscoveryResponse,
 )
 from app.schemas.course import (
     LessonBase,
@@ -34,10 +38,14 @@ from app.schemas.course import (
     CourseUpdate,
     CourseResponse,
     CourseDetailResponse,
+    OrderItem,
+    ReorderRequest,
+    CoursePublishResponse,
 )
 from app.schemas.quiz import (
     QuestionOptionBase,
     QuestionOptionCreate,
+    QuestionOptionUpdate,
     QuestionOptionResponse,
     QuestionOptionPublicResponse,
     QuestionBase,
@@ -53,14 +61,17 @@ from app.schemas.quiz import (
     AIQuizDraftBase,
     AIQuizDraftCreate,
     AIQuizDraftUpdate,
+    AIQuizDraftReviewRequest,
     AIQuizDraftResponse,
 )
 from app.schemas.enrollment import (
     LessonProgressResponse,
     LessonProgressUpdate,
     ModuleProgressResponse,
+    ModuleProgressDetailResponse,
     EnrollmentCreate,
     EnrollmentResponse,
+    EnrollmentDetailResponse,
     CourseProgressResponse,
 )
 from app.schemas.assessment import (
@@ -97,6 +108,10 @@ __all__ = [
     "SubDomainCreate",
     "SubDomainUpdate",
     "SubDomainResponse",
+    "SubDomainDetailResponse",
+    "UserInterestDetailResponse",
+    "TaxonomyTreeResponse",
+    "PersonalizedDiscoveryResponse",
     # Course
     "LessonBase",
     "LessonCreate",
@@ -112,9 +127,13 @@ __all__ = [
     "CourseUpdate",
     "CourseResponse",
     "CourseDetailResponse",
+    "OrderItem",
+    "ReorderRequest",
+    "CoursePublishResponse",
     # Quiz
     "QuestionOptionBase",
     "QuestionOptionCreate",
+    "QuestionOptionUpdate",
     "QuestionOptionResponse",
     "QuestionOptionPublicResponse",
     "QuestionBase",
@@ -130,13 +149,16 @@ __all__ = [
     "AIQuizDraftBase",
     "AIQuizDraftCreate",
     "AIQuizDraftUpdate",
+    "AIQuizDraftReviewRequest",
     "AIQuizDraftResponse",
     # Enrollment
     "LessonProgressResponse",
     "LessonProgressUpdate",
     "ModuleProgressResponse",
+    "ModuleProgressDetailResponse",
     "EnrollmentCreate",
     "EnrollmentResponse",
+    "EnrollmentDetailResponse",
     "CourseProgressResponse",
     # Assessment
     "QuizAnswerSubmit",
