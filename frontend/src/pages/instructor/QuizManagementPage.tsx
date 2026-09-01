@@ -16,6 +16,7 @@ import { quizzesApi } from '../../api/quizzes';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Button } from '../../components/ui/Button';
+import { SearchInput } from '../../components/ui/SearchInput';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
@@ -29,6 +30,8 @@ export const QuizManagementPage: React.FC = () => {
   const queryClient = useQueryClient();
   const { success, error: toastError } = useToast();
 
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState<'ALL' | QuizType>('ALL');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [quizType, setQuizType] = useState<QuizType>('MODULE');
   const [targetId, setTargetId] = useState('');
@@ -134,6 +137,54 @@ export const QuizManagementPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Search & Filter Bar */}
+      <div className="bg-white p-4 rounded-xl border border-border shadow-card flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="w-full sm:w-96">
+          <SearchInput
+            placeholder="Search assessment checkpoints by module title..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onClear={() => setSearch('')}
+          />
+        </div>
+
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setFilterType('ALL')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              filterType === 'ALL'
+                ? 'bg-white text-primary shadow-sm'
+                : 'text-charcoal-muted hover:text-charcoal'
+            }`}
+          >
+            All Checkpoints
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterType('MODULE')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              filterType === 'MODULE'
+                ? 'bg-white text-primary shadow-sm'
+                : 'text-charcoal-muted hover:text-charcoal'
+            }`}
+          >
+            Module Quizzes
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterType('FINAL')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              filterType === 'FINAL'
+                ? 'bg-white text-primary shadow-sm'
+                : 'text-charcoal-muted hover:text-charcoal'
+            }`}
+          >
+            Final Exam
+          </button>
+        </div>
+      </div>
+
       {/* Target Module / Chapter Selectable Setup */}
       <div className="bg-white p-6 rounded-2xl border border-border shadow-card space-y-4">
         <h3 className="text-base font-bold text-charcoal">Course Curriculum Checkpoints</h3>
@@ -142,53 +193,63 @@ export const QuizManagementPage: React.FC = () => {
         </p>
 
         <div className="space-y-3 pt-2">
-          {modules.map((mod, idx) => (
-            <div
-              key={mod.id}
-              className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between"
-            >
-              <div>
-                <span className="text-xs font-bold text-primary">Module {idx + 1}</span>
-                <h4 className="text-sm font-bold text-charcoal">{mod.title}</h4>
-              </div>
-
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setQuizType('MODULE');
-                  setTargetId(mod.id);
-                  setTitle(`${mod.title} Assessment`);
-                  setIsCreateModalOpen(true);
-                }}
-                leftIcon={<Plus className="w-3.5 h-3.5" />}
+          {modules
+            .filter(
+              (mod) =>
+                (filterType === 'ALL' || filterType === 'MODULE') &&
+                mod.title.toLowerCase().includes(search.toLowerCase())
+            )
+            .map((mod, idx) => (
+              <div
+                key={mod.id}
+                className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between"
               >
-                Create Module Quiz
-              </Button>
-            </div>
-          ))}
+                <div>
+                  <span className="text-xs font-bold text-primary">Module {idx + 1}</span>
+                  <h4 className="text-sm font-bold text-charcoal">{mod.title}</h4>
+                </div>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setQuizType('MODULE');
+                    setTargetId(mod.id);
+                    setTitle(`${mod.title} Assessment`);
+                    setIsCreateModalOpen(true);
+                  }}
+                  leftIcon={<Plus className="w-3.5 h-3.5" />}
+                >
+                  Create Module Quiz
+                </Button>
+              </div>
+            ))}
 
           {/* Final Exam Bar */}
-          <div className="p-4 bg-amber-50/50 rounded-xl border border-amber-200 flex items-center justify-between">
-            <div>
-              <span className="text-xs font-bold text-amber-700">Course Graduation</span>
-              <h4 className="text-sm font-bold text-charcoal">Final Certification Exam</h4>
-            </div>
+          {(filterType === 'ALL' || filterType === 'FINAL') &&
+            ('final certification exam'.includes(search.toLowerCase()) ||
+              (course?.title && course.title.toLowerCase().includes(search.toLowerCase()))) && (
+              <div className="p-4 bg-amber-50/50 rounded-xl border border-amber-200 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-amber-700">Course Graduation</span>
+                  <h4 className="text-sm font-bold text-charcoal">Final Certification Exam</h4>
+                </div>
 
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setQuizType('FINAL');
-                setTargetId(courseId!);
-                setTitle(`${course?.title} Final Exam`);
-                setIsCreateModalOpen(true);
-              }}
-              leftIcon={<Award className="w-3.5 h-3.5" />}
-            >
-              Create Final Exam
-            </Button>
-          </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setQuizType('FINAL');
+                    setTargetId(courseId!);
+                    setTitle(`${course?.title} Final Exam`);
+                    setIsCreateModalOpen(true);
+                  }}
+                  leftIcon={<Award className="w-3.5 h-3.5" />}
+                >
+                  Create Final Exam
+                </Button>
+              </div>
+            )}
         </div>
       </div>
 

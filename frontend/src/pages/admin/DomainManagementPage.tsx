@@ -5,11 +5,13 @@ import { domainsApi } from '../../api/domains';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Button } from '../../components/ui/Button';
+import { SearchInput } from '../../components/ui/SearchInput';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Textarea } from '../../components/ui/Textarea';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Skeleton } from '../../components/ui/Skeleton';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { Domain } from '../../types';
 
 export const DomainManagementPage: React.FC = () => {
@@ -119,11 +121,14 @@ export const DomainManagementPage: React.FC = () => {
 
       {/* Search Input */}
       <div className="bg-white p-4 rounded-xl border border-border shadow-card">
-        <Input
-          placeholder="Search domains by name or slug..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div className="w-full sm:w-96">
+          <SearchInput
+            placeholder="Search domains by name or slug..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onClear={() => setSearch('')}
+          />
+        </div>
       </div>
 
       {/* Domains Table */}
@@ -132,6 +137,17 @@ export const DomainManagementPage: React.FC = () => {
           <Skeleton className="h-16 rounded-xl" />
           <Skeleton className="h-16 rounded-xl" />
         </div>
+      ) : filteredDomains.length === 0 ? (
+        <EmptyState
+          title={search ? 'No Matching Domains' : 'No Domains Created'}
+          description={
+            search
+              ? `No subject domains matched your search "${search}".`
+              : 'Add your first top-level academic or technical subject domain.'
+          }
+          actionLabel={search ? 'Clear Search' : 'Add Domain'}
+          onAction={search ? () => setSearch('') : openCreateModal}
+        />
       ) : (
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="overflow-x-auto">

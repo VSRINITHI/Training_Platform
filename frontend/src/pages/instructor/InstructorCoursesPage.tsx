@@ -1,22 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PlusCircle,
   BookOpen,
-  Search,
-  SlidersHorizontal,
   Edit,
   Trash2,
   CheckCircle,
   Eye,
-  Sparkles,
+  SlidersHorizontal,
+  FolderPlus,
 } from 'lucide-react';
 import { coursesApi } from '../../api/courses';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
+import { SearchInput } from '../../components/ui/SearchInput';
 import { Badge } from '../../components/ui/Badge';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Skeleton } from '../../components/ui/Skeleton';
@@ -27,12 +26,13 @@ export const InstructorCoursesPage: React.FC = () => {
   const queryClient = useQueryClient();
   const { success, error: toastError } = useToast();
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PUBLISHED' | 'DRAFT'>('ALL');
   const [courseToDelete, setCourseToDelete] = useState<Course | null>(null);
 
-  // Fetch Courses
+  // Fetch all authored courses (including draft/unpublished)
   const { data: courses = [], isLoading } = useQuery({
     queryKey: ['instructor-courses-list'],
-    queryFn: () => coursesApi.list(),
+    queryFn: () => coursesApi.list({ my_authored: true }),
   });
 
   // Delete Course Mutation
@@ -40,7 +40,7 @@ export const InstructorCoursesPage: React.FC = () => {
     mutationFn: (id: string) => coursesApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['instructor-courses-list'] });
-      success('Course Deleted', 'The course and its draft curriculum have been removed.');
+      success('Course Deleted', 'The course and its curriculum have been removed.');
       setCourseToDelete(null);
     },
     onError: (err: any) => {
@@ -66,17 +66,32 @@ export const InstructorCoursesPage: React.FC = () => {
     },
   });
 
-  const filteredCourses = courses.filter(
-    (c) =>
-      c.title.toLowerCase().includes(search.toLowerCase()) ||
-      c.description.toLowerCase().includes(search.toLowerCase())
-  );
+  const publishedCount = useMemo(() => courses.filter((c) => c.is_published).length, [courses]);
+  const draftCount = useMemo(() => courses.filter((c) => !c.is_published).length, [courses]);
+
+  const filteredCourses = useMemo(() => {
+    return courses.filter((c) => {
+      const matchesSearch =
+        c.title.toLowerCase().includes(search.toLowerCase()) ||
+        c.description.toLowerCase().includes(search.toLowerCase()) ||
+        (c.sub_domain?.name && c.sub_domain.name.toLowerCase().includes(search.toLowerCase()));
+
+      const matchesStatus =
+        statusFilter === 'ALL'
+          ? true
+          : statusFilter === 'PUBLISHED'
+          ? c.is_published
+          : !c.is_published;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [courses, search, statusFilter]);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Course Management"
-        description="Manage your courses, curriculum structures, assessments, and publishing states."
+        description="Manage your created courses, curriculum structure, quizzes, and publication states."
         actions={
           <Link to="/instructor/courses/new">
             <Button size="md" leftIcon={<PlusCircle className="w-4 h-4" />}>
@@ -86,39 +101,85 @@ export const InstructorCoursesPage: React.FC = () => {
         }
       />
 
-      {/* Filter / Search Bar */}
-      <div className="bg-white p-4 rounded-xl border border-border shadow-card flex items-center gap-3">
-        <div className="flex-1">
-          <Input
-            placeholder="Search your courses..."
+      {/* Search and Status Filter Bar */}
+      <div className="bg-white p-4 rounded-xl border border-border shadow-card flex flex-col sm:flex-row items-center justify-between gap-4">
+        {/* Search Input */}
+        <div className="w-full sm:w-96">
+          <SearchInput
+            placeholder="Search courses by title or description..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onClear={() => setSearch('')}
           />
+        </div>
+
+        {/* Status Filter Tabs */}
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-full sm:w-auto overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('ALL')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              statusFilter === 'ALL'
+                ? 'bg-white text-primary shadow-sm'
+                : 'text-charcoal-muted hover:text-charcoal'
+            }`}
+          >
+            All ({courses.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('PUBLISHED')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              statusFilter === 'PUBLISHED'
+                ? 'bg-white text-primary shadow-sm'
+                : 'text-charcoal-muted hover:text-charcoal'
+            }`}
+          >
+            Published ({publishedCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('DRAFT')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              statusFilter === 'DRAFT'
+                ? 'bg-white text-primary shadow-sm'
+                : 'text-charcoal-muted hover:text-charcoal'
+            }`}
+          >
+            Draft / Unpublished ({draftCount})
+          </button>
         </div>
       </div>
 
       {/* Courses List */}
       {isLoading ? (
         <div className="space-y-3">
-          <Skeleton className="h-24 rounded-xl" />
-          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
         </div>
       ) : filteredCourses.length === 0 ? (
         <EmptyState
-          title="No Courses Found"
-          description="You haven't created any courses matching your search."
-          actionLabel="Create New Course"
-          onAction={() => window.location.assign('/instructor/courses/new')}
+          title={search ? 'No Matching Courses' : 'No Courses Found'}
+          description={
+            search
+              ? `No courses matched your query "${search}". Try adjusting your keywords or clearing the filter.`
+              : "You haven't created any courses in this filter tab yet."
+          }
+          actionLabel={search ? 'Clear Search' : 'Create New Course'}
+          onAction={
+            search ? () => setSearch('') : () => window.location.assign('/instructor/courses/new')
+          }
         />
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {filteredCourses.map((course) => (
             <div
               key={course.id}
               className="bg-white p-6 rounded-2xl border border-border shadow-card flex flex-col md:flex-row items-start md:items-center justify-between gap-6"
             >
               <div className="space-y-1.5 flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-lg font-bold text-charcoal">{course.title}</h3>
                   {course.is_published ? (
                     <Badge variant="success" size="sm">
@@ -126,7 +187,7 @@ export const InstructorCoursesPage: React.FC = () => {
                     </Badge>
                   ) : (
                     <Badge variant="warning" size="sm">
-                      Draft
+                      Draft / Unpublished
                     </Badge>
                   )}
                   {course.difficulty_level && (
@@ -202,7 +263,7 @@ export const InstructorCoursesPage: React.FC = () => {
           onClose={() => setCourseToDelete(null)}
           onConfirm={() => deleteMutation.mutate(courseToDelete.id)}
           title="Delete Course"
-          message={`Are you sure you want to delete "${courseToDelete.title}"? All associated modules and lessons will be removed.`}
+          message={`Are you sure you want to delete "${courseToDelete.title}"? All associated modules, lessons, and draft quizzes will be removed.`}
           confirmLabel="Delete Course"
           isLoading={deleteMutation.isPending}
         />

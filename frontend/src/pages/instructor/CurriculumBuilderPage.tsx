@@ -19,6 +19,7 @@ import { lessonsApi } from '../../api/lessons';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Button } from '../../components/ui/Button';
+import { SearchInput } from '../../components/ui/SearchInput';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Textarea } from '../../components/ui/Textarea';
@@ -31,6 +32,7 @@ export const CurriculumBuilderPage: React.FC = () => {
   const queryClient = useQueryClient();
   const { success, error: toastError } = useToast();
 
+  const [search, setSearch] = useState('');
   const [isModuleModalOpen, setIsModuleModalOpen] = useState(false);
   const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
@@ -159,7 +161,27 @@ export const CurriculumBuilderPage: React.FC = () => {
     return <LoadingState message="Loading curriculum tree..." className="py-24" />;
   }
 
-  const modules = course?.modules || [];
+  const rawModules = course?.modules || [];
+
+  const modules = rawModules
+    .map((mod) => {
+      const matchesModule =
+        mod.title.toLowerCase().includes(search.toLowerCase()) ||
+        (mod.description && mod.description.toLowerCase().includes(search.toLowerCase()));
+
+      const filteredLessons = (mod.lessons || []).filter((l) =>
+        l.title.toLowerCase().includes(search.toLowerCase())
+      );
+
+      if (matchesModule || filteredLessons.length > 0) {
+        return {
+          ...mod,
+          lessons: matchesModule ? mod.lessons : filteredLessons,
+        };
+      }
+      return null;
+    })
+    .filter(Boolean) as ModuleDetail[];
 
   return (
     <div className="space-y-6">
@@ -184,8 +206,25 @@ export const CurriculumBuilderPage: React.FC = () => {
         }
       />
 
+      {/* Search Bar */}
+      {rawModules.length > 0 && (
+        <div className="bg-white p-4 rounded-xl border border-border shadow-card flex items-center gap-3">
+          <div className="w-full sm:w-96">
+            <SearchInput
+              placeholder="Search chapters or lessons..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onClear={() => setSearch('')}
+            />
+          </div>
+          <span className="text-xs font-semibold text-charcoal-muted">
+            Showing {modules.length} of {rawModules.length} chapters
+          </span>
+        </div>
+      )}
+
       {/* Curriculum Tree List */}
-      {modules.length === 0 ? (
+      {rawModules.length === 0 ? (
         <div className="bg-white p-8 rounded-2xl border border-dashed border-border text-center space-y-3">
           <BookOpen className="w-12 h-12 text-slate-300 mx-auto" />
           <h3 className="text-base font-bold text-charcoal">No Curriculum Modules Yet</h3>
@@ -194,6 +233,17 @@ export const CurriculumBuilderPage: React.FC = () => {
           </p>
           <Button size="sm" onClick={() => setIsModuleModalOpen(true)} leftIcon={<Plus className="w-4 h-4" />}>
             Add First Module
+          </Button>
+        </div>
+      ) : modules.length === 0 ? (
+        <div className="bg-white p-8 rounded-2xl border border-border text-center space-y-3 shadow-card">
+          <BookOpen className="w-12 h-12 text-slate-300 mx-auto" />
+          <h3 className="text-base font-bold text-charcoal">No Matching Chapters or Lessons</h3>
+          <p className="text-xs text-charcoal-muted">
+            No curriculum items matched your search "{search}".
+          </p>
+          <Button size="sm" variant="outline" onClick={() => setSearch('')}>
+            Clear Search
           </Button>
         </div>
       ) : (

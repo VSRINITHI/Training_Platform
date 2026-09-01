@@ -6,12 +6,14 @@ import { subDomainsApi } from '../../api/subDomains';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Button } from '../../components/ui/Button';
+import { SearchInput } from '../../components/ui/SearchInput';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Textarea } from '../../components/ui/Textarea';
 import { Select } from '../../components/ui/Select';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Skeleton } from '../../components/ui/Skeleton';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { SubDomain } from '../../types';
 
 export const SubDomainManagementPage: React.FC = () => {
@@ -146,10 +148,11 @@ export const SubDomainManagementPage: React.FC = () => {
           ))}
         </Select>
 
-        <Input
+        <SearchInput
           placeholder="Search sub-domains by name or slug..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          onClear={() => setSearch('')}
         />
       </div>
 
@@ -159,6 +162,24 @@ export const SubDomainManagementPage: React.FC = () => {
           <Skeleton className="h-16 rounded-xl" />
           <Skeleton className="h-16 rounded-xl" />
         </div>
+      ) : filteredSubDomains.length === 0 ? (
+        <EmptyState
+          title={search || selectedDomainId ? 'No Matching Sub-Domains' : 'No Sub-Domains Created'}
+          description={
+            search || selectedDomainId
+              ? `No sub-domains matched your filter or search criteria.`
+              : 'Add your first technical sub-domain topic.'
+          }
+          actionLabel={search || selectedDomainId ? 'Clear Filters' : 'Add Sub-Domain'}
+          onAction={
+            search || selectedDomainId
+              ? () => {
+                  setSearch('');
+                  setSelectedDomainId('');
+                }
+              : openCreateModal
+          }
+        />
       ) : (
         <div className="bg-white rounded-2xl border border-border shadow-card overflow-hidden">
           <div className="overflow-x-auto">

@@ -1,21 +1,42 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Sparkles, Eye, CheckCircle2, XCircle, Clock, AlertTriangle, BookOpen } from 'lucide-react';
 import { coursesApi } from '../../api/courses';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Button } from '../../components/ui/Button';
+import { SearchInput } from '../../components/ui/SearchInput';
 import { Badge } from '../../components/ui/Badge';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
 
 export const AIDraftsPage: React.FC = () => {
+  const [search, setSearch] = useState('');
+
   // Fetch instructor's courses to discover lessons
   const { data: courses = [], isLoading } = useQuery({
     queryKey: ['instructor-courses-ai-drafts'],
-    queryFn: () => coursesApi.list(),
+    queryFn: () => coursesApi.list({ my_authored: true }),
   });
+
+  const filteredCourses = useMemo(() => {
+    if (!search.trim()) return courses;
+    const q = search.toLowerCase();
+    return courses.filter((c) => {
+      const matchCourse =
+        c.title.toLowerCase().includes(q) ||
+        (c.sub_domain?.name && c.sub_domain.name.toLowerCase().includes(q));
+
+      const matchModules = c.modules?.some(
+        (m) =>
+          m.title.toLowerCase().includes(q) ||
+          m.lessons?.some((l) => l.title.toLowerCase().includes(q))
+      );
+
+      return matchCourse || matchModules;
+    });
+  }, [courses, search]);
 
   if (isLoading) {
     return <LoadingState message="Loading AI quarantine queue..." className="py-24" />;
@@ -41,6 +62,23 @@ export const AIDraftsPage: React.FC = () => {
         </p>
       </div>
 
+      {/* Search Bar */}
+      {courses.length > 0 && (
+        <div className="bg-white p-4 rounded-xl border border-border shadow-card flex items-center gap-3">
+          <div className="w-full sm:w-96">
+            <SearchInput
+              placeholder="Search drafts by course, chapter, or lesson..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onClear={() => setSearch('')}
+            />
+          </div>
+          <span className="text-xs font-semibold text-charcoal-muted">
+            Showing {filteredCourses.length} of {courses.length} courses
+          </span>
+        </div>
+      )}
+
       {/* Course & Lesson Draft Navigator */}
       <div className="space-y-4">
         {courses.length === 0 ? (
@@ -51,14 +89,25 @@ export const AIDraftsPage: React.FC = () => {
             actionLabel="Create Course"
             onAction={() => window.location.assign('/instructor/courses/new')}
           />
+        ) : filteredCourses.length === 0 ? (
+          <div className="bg-white p-8 rounded-2xl border border-border text-center space-y-3 shadow-card">
+            <Sparkles className="w-10 h-10 text-slate-300 mx-auto" />
+            <h3 className="text-base font-bold text-charcoal">No Matching Courses or Lessons</h3>
+            <p className="text-xs text-charcoal-muted">
+              No curriculum items matched your search query "{search}".
+            </p>
+            <Button size="sm" variant="outline" onClick={() => setSearch('')}>
+              Clear Search
+            </Button>
+          </div>
         ) : (
           <div className="space-y-4">
-            {courses.map((course) => (
+            {filteredCourses.map((course) => (
               <div key={course.id} className="bg-white rounded-2xl border border-border shadow-card p-6 space-y-3">
                 <div className="flex items-center justify-between pb-2 border-b border-border/60">
                   <div>
                     <h3 className="text-base font-bold text-charcoal">{course.title}</h3>
-                    <p className="text-xs text-charcoal-muted">{course.sub_domain?.name}</p>
+                    <p className="text-xs text-charcoal-muted">{course.sub_domain?.name || 'General'}</p>
                   </div>
                   <Link to={`/instructor/courses/${course.id}/curriculum`}>
                     <Button size="sm" variant="outline">

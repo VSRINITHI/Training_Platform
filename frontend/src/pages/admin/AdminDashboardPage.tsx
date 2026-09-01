@@ -29,7 +29,7 @@ export const AdminDashboardPage: React.FC = () => {
 
   const { data: courses = [] } = useQuery({
     queryKey: ['admin-dash-courses'],
-    queryFn: () => coursesApi.list(),
+    queryFn: () => coursesApi.list({ my_authored: true }),
   });
 
   const publishedCourses = courses.filter((c) => c.is_published);

@@ -13,8 +13,16 @@ export const coursesApi = {
     sub_domain_id?: string;
     difficulty_level?: DifficultyLevel;
     search?: string;
+    my_authored?: boolean;
   }): Promise<Course[]> => {
-    const res = await apiClient.get<Course[]>('/courses', { params });
+    const res = await apiClient.get<Course[]>('/courses', {
+      params: {
+        sub_domain_id: params?.sub_domain_id,
+        difficulty: params?.difficulty_level,
+        search: params?.search,
+        my_authored: params?.my_authored,
+      },
+    });
     return res.data;
   },
 

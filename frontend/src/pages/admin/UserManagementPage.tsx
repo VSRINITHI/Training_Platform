@@ -6,6 +6,7 @@ import { useToast } from '../../context/ToastContext';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { SearchInput } from '../../components/ui/SearchInput';
 import { Select } from '../../components/ui/Select';
 import { Badge } from '../../components/ui/Badge';
 import { UserRole } from '../../types';
@@ -60,13 +61,18 @@ export const UserManagementPage: React.FC = () => {
         </div>
 
         <form onSubmit={handleRoleAssign} className="space-y-4">
-          <Input
-            label="Target User UUID"
-            placeholder="e.g. 11111111-1111-1111-1111-111111111111"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-            helperText="The user's UUID from public.users or their authentication profile."
-          />
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-charcoal">Target User UUID</label>
+            <SearchInput
+              placeholder="e.g. 11111111-1111-1111-1111-111111111111"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              onClear={() => setUserId('')}
+            />
+            <p className="text-[11px] text-charcoal-muted">
+              The user's UUID from public.users or their authentication profile.
+            </p>
+          </div>
 
           <Select
             label="Assigned Role"
