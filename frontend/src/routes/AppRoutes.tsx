@@ -15,6 +15,7 @@ import { RegisterPage } from '../pages/auth/RegisterPage';
 import { ForgotPasswordPage } from '../pages/auth/ForgotPasswordPage';
 import { AuthCallbackPage } from '../pages/auth/AuthCallbackPage';
 import { SetPasswordPage } from '../pages/auth/SetPasswordPage';
+import { VerifyCertificatePage } from '../pages/learner/VerifyCertificatePage';
 
 // Learner Pages
 import { LearnerDashboardPage } from '../pages/learner/LearnerDashboardPage';
@@ -66,6 +67,8 @@ export const AppRoutes: React.FC = () => {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
       <Route path="/set-password" element={<SetPasswordPage />} />
+      <Route path="/verify-certificate" element={<VerifyCertificatePage />} />
+      <Route path="/verify-certificate/:certificateNumber" element={<VerifyCertificatePage />} />
 
       {/* Learner Portal */}
       <Route
@@ -113,6 +116,8 @@ export const AppRoutes: React.FC = () => {
         <Route path="courses/:courseId/edit" element={<EditCoursePage />} />
         <Route path="courses/:courseId/curriculum" element={<CurriculumBuilderPage />} />
         <Route path="courses/:courseId/quizzes" element={<QuizManagementPage />} />
+        <Route path="courses/:courseId/ai-generate" element={<AIQuizGenerationPage />} />
+        <Route path="modules/:moduleId/ai-generate" element={<AIQuizGenerationPage />} />
         <Route path="courses/:courseId/review" element={<CourseReviewPage />} />
         <Route path="lessons/:lessonId" element={<LessonEditorPage />} />
         <Route path="lessons/:lessonId/ai-generate" element={<AIQuizGenerationPage />} />

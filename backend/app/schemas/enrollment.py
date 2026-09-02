@@ -39,6 +39,11 @@ class ModuleProgressDetailResponse(ModuleProgressResponse):
     is_unlocked: bool
     total_lessons_count: int = 0
     completed_lessons_count: int = 0
+    quiz_id: Optional[uuid.UUID] = None
+    quiz_title: Optional[str] = None
+    quiz_passing_score: Optional[Decimal] = None
+    quiz_attempts_remaining: int = 2
+    is_quiz_passed: bool = False
 
 
 class EnrollmentCreate(CoreBaseModel):
@@ -71,4 +76,6 @@ class CourseProgressResponse(CoreBaseModel):
     progress_pct: Decimal = Field(..., ge=Decimal("0.00"), le=Decimal("100.00"))
     is_final_exam_unlocked: bool
     is_course_completed: bool
+    final_exam_quiz_id: Optional[uuid.UUID] = None
     modules: List[ModuleProgressDetailResponse] = []
+

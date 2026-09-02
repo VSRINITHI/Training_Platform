@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from typing import List, Optional
 from datetime import datetime
 from sqlalchemy import (
@@ -12,7 +12,7 @@ from sqlalchemy import (
     CheckConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID, ENUM
+from sqlalchemy.dialects.postgresql import UUID, ENUM, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.models.enums import DifficultyLevel
@@ -46,6 +46,9 @@ class Course(Base):
         nullable=True,
     )
     is_published: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    prerequisites: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
+    learning_outcomes: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
+    has_certificate: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

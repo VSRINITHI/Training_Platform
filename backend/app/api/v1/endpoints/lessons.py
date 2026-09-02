@@ -14,6 +14,7 @@ from app.schemas.course import (
     ReorderRequest,
 )
 from app.schemas.common import MessageResponse
+from app.core.storage import resolve_media_url
 
 router = APIRouter(tags=["Lessons (Curriculum)"])
 
@@ -74,6 +75,7 @@ def get_lesson(
 ) -> LessonResponse:
     """
     Retrieves a single lesson's full content (text body, video URL, document URL).
+    Automatically resolves signed URLs for private video storage.
     """
     lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
     if not lesson:
@@ -81,6 +83,8 @@ def get_lesson(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lesson not found",
         )
+    if lesson.video_url:
+        lesson.video_url = resolve_media_url(lesson.video_url)
     return lesson
 
 

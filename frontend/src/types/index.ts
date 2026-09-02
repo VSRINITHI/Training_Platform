@@ -120,11 +120,15 @@ export interface Course {
   thumbnail_url?: string | null;
   difficulty_level?: DifficultyLevel | null;
   is_published: boolean;
+  prerequisites?: string[] | null;
+  learning_outcomes?: string[] | null;
+  has_certificate: boolean;
   created_at: string;
   updated_at: string;
   instructor?: UserProfile;
   sub_domain?: SubDomain;
   modules?: ModuleDetail[];
+  final_quiz?: QuizSummary | null;
 }
 
 export interface PersonalizedDiscoveryResponse {
@@ -142,6 +146,9 @@ export interface CourseCreatePayload {
   thumbnail_url?: string | null;
   difficulty_level?: DifficultyLevel | null;
   is_published?: boolean;
+  prerequisites?: string[] | null;
+  learning_outcomes?: string[] | null;
+  has_certificate?: boolean;
 }
 
 export interface CourseUpdatePayload {
@@ -152,6 +159,9 @@ export interface CourseUpdatePayload {
   difficulty_level?: DifficultyLevel | null;
   sub_domain_id?: string;
   is_published?: boolean;
+  prerequisites?: string[] | null;
+  learning_outcomes?: string[] | null;
+  has_certificate?: boolean;
 }
 
 export interface ModuleItem {
@@ -164,8 +174,19 @@ export interface ModuleItem {
   created_at: string;
 }
 
+export interface QuizSummary {
+  id: string;
+  title: string;
+  description?: string | null;
+  quiz_type: QuizType;
+  passing_score: number;
+  max_attempts: number;
+  questions_count?: number;
+}
+
 export interface ModuleDetail extends ModuleItem {
   lessons: LessonItem[];
+  quiz?: QuizSummary | null;
 }
 
 export interface ModuleCreatePayload {
@@ -259,6 +280,8 @@ export interface QuizPublic {
   title: string;
   description?: string | null;
   quiz_type: QuizType;
+  course_id?: string | null;
+  module_id?: string | null;
   passing_score: number;
   max_attempts: number;
   time_limit_minutes?: number | null;
@@ -354,9 +377,31 @@ export interface AIQuizDraftCreatePayload {
   raw_llm_response: any;
 }
 
+export interface AIQuizGeneratePayload {
+  num_questions?: number;
+  difficulty?: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+  question_types?: QuestionType[];
+  custom_instructions?: string;
+  source_materials?: string[];
+  lesson_ids?: string[];
+  module_ids?: string[];
+  document_urls?: string[];
+  include_transcript?: boolean;
+}
+
 export interface AIQuizDraftReviewPayload {
   status: 'APPROVED' | 'DISCARDED';
   import_to_quiz?: boolean;
+  target_type?: QuizType;
+  target_id?: string;
+  target_quiz_id?: string;
+}
+
+export interface UploadResponse {
+  url: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
 }
 
 // Enrollment & Progress Types
@@ -396,6 +441,11 @@ export interface ModuleProgressDetail {
   relearning_triggered_at?: string | null;
   total_lessons_count: number;
   completed_lessons_count: number;
+  quiz_id?: string | null;
+  quiz_title?: string | null;
+  quiz_passing_score?: number | null;
+  quiz_attempts_remaining?: number;
+  is_quiz_passed?: boolean;
   lesson_progress_records: LessonProgressRecord[];
 }
 
@@ -408,6 +458,7 @@ export interface CourseProgressHierarchy {
   progress_pct: number;
   is_final_exam_unlocked: boolean;
   is_course_completed: boolean;
+  final_exam_quiz_id?: string | null;
   modules: ModuleProgressDetail[];
 }
 
@@ -465,6 +516,10 @@ export interface Certificate {
   certificate_number: string;
   issued_at: string;
   verification_hash: string;
+  student_name?: string | null;
+  course_title?: string | null;
+  course_slug?: string | null;
+  instructor_name?: string | null;
   course?: Course;
 }
 
@@ -475,4 +530,5 @@ export interface CertificateVerifyResult {
   course_title?: string | null;
   issued_at?: string | null;
   verification_hash?: string | null;
+  instructor_name?: string | null;
 }

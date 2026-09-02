@@ -12,10 +12,15 @@ import {
   ArrowLeft,
   FileText,
   CheckCircle2,
+  Award,
+  Layers,
+  HelpCircle,
+  Eye,
 } from 'lucide-react';
 import { coursesApi } from '../../api/courses';
 import { modulesApi } from '../../api/modules';
 import { lessonsApi } from '../../api/lessons';
+import { quizzesApi } from '../../api/quizzes';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Button } from '../../components/ui/Button';
@@ -25,7 +30,7 @@ import { Input } from '../../components/ui/Input';
 import { Textarea } from '../../components/ui/Textarea';
 import { Checkbox } from '../../components/ui/Checkbox';
 import { LoadingState } from '../../components/ui/LoadingState';
-import { ModuleDetail, LessonItem } from '../../types';
+import { ModuleDetail, LessonItem, QuizType } from '../../types';
 
 export const CurriculumBuilderPage: React.FC = () => {
   const { courseId } = useParams<{ courseId: string }>();
@@ -46,7 +51,15 @@ export const CurriculumBuilderPage: React.FC = () => {
   const [lessonTitle, setLessonTitle] = useState('');
   const [lessonDuration, setLessonDuration] = useState<number>(15);
 
-  // Fetch Course details
+  // Manual Quiz Modal state
+  const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
+  const [quizTargetType, setQuizTargetType] = useState<QuizType>('MODULE');
+  const [quizTargetId, setQuizTargetId] = useState<string>('');
+  const [quizTitle, setQuizTitle] = useState('');
+  const [quizPassingScore, setQuizPassingScore] = useState<number>(70);
+  const [quizMaxAttempts, setQuizMaxAttempts] = useState<number>(2);
+
+  // Fetch Course details (includes module.quiz and course.final_quiz)
   const { data: course, isLoading } = useQuery({
     queryKey: ['curriculum-course', courseId],
     queryFn: () => coursesApi.get(courseId!),
@@ -112,6 +125,40 @@ export const CurriculumBuilderPage: React.FC = () => {
     },
     onError: (err: any) => {
       toastError('Delete Failed', err.message);
+    },
+  });
+
+  // Create Quiz Mutation
+  const createQuizMutation = useMutation({
+    mutationFn: () =>
+      quizzesApi.create({
+        title: quizTitle,
+        quiz_type: quizTargetType,
+        passing_score: Number(quizPassingScore),
+        max_attempts: Number(quizMaxAttempts),
+        course_id: quizTargetType === 'FINAL' ? courseId : undefined,
+        module_id: quizTargetType === 'MODULE' ? quizTargetId : undefined,
+      }),
+    onSuccess: (newQuiz) => {
+      queryClient.invalidateQueries({ queryKey: ['curriculum-course', courseId] });
+      success('Assessment Checkpoint Created', 'You can now add or edit questions for this quiz.');
+      setIsQuizModalOpen(false);
+      setQuizTitle('');
+    },
+    onError: (err: any) => {
+      toastError('Failed to create quiz', err.response?.data?.detail || err.message);
+    },
+  });
+
+  // Delete Quiz Mutation
+  const deleteQuizMutation = useMutation({
+    mutationFn: (quizId: string) => quizzesApi.delete(quizId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['curriculum-course', courseId] });
+      success('Quiz Deleted', 'Assessment checkpoint deleted successfully.');
+    },
+    onError: (err: any) => {
+      toastError('Delete Failed', err.response?.data?.detail || err.message);
     },
   });
 
@@ -184,7 +231,7 @@ export const CurriculumBuilderPage: React.FC = () => {
     .filter(Boolean) as ModuleDetail[];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12">
       <div className="flex items-center gap-2 text-xs text-charcoal-muted mb-2">
         <Link to="/instructor/courses" className="hover:text-charcoal hover:underline flex items-center gap-1">
           <ArrowLeft className="w-3.5 h-3.5" />
@@ -194,15 +241,22 @@ export const CurriculumBuilderPage: React.FC = () => {
 
       <PageHeader
         title={`Curriculum Builder: ${course?.title}`}
-        description="Add module chapters, sequential lessons, and configure competency assessments."
+        description="Add module chapters, sequential lessons, and configure competency assessment checkpoints."
         actions={
-          <Button
-            size="md"
-            onClick={() => setIsModuleModalOpen(true)}
-            leftIcon={<Plus className="w-4 h-4" />}
-          >
-            Add Module
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link to={`/instructor/courses/${courseId}/ai-generate`}>
+              <Button size="md" variant="outline" leftIcon={<Sparkles className="w-4 h-4 text-primary" />}>
+                Generate with AI
+              </Button>
+            </Link>
+            <Button
+              size="md"
+              onClick={() => setIsModuleModalOpen(true)}
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
+              Add Module
+            </Button>
+          </div>
         }
       />
 
@@ -247,7 +301,7 @@ export const CurriculumBuilderPage: React.FC = () => {
           </Button>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {modules.map((module, mIdx) => (
             <div key={module.id} className="bg-white rounded-2xl border border-border shadow-card p-6 space-y-4">
               {/* Module Header */}
@@ -327,6 +381,11 @@ export const CurriculumBuilderPage: React.FC = () => {
                             ({lesson.duration_minutes} min)
                           </span>
                         )}
+                        {lesson.document_url && (
+                          <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-medium shrink-0">
+                            PDF
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -345,13 +404,6 @@ export const CurriculumBuilderPage: React.FC = () => {
                         >
                           <ArrowDown className="w-3.5 h-3.5" />
                         </button>
-
-                        {/* AI Generate Quiz Draft for this Lesson */}
-                        <Link to={`/instructor/lessons/${lesson.id}/ai-generate`}>
-                          <Button size="sm" variant="outline" leftIcon={<Sparkles className="w-3 h-3 text-primary" />}>
-                            AI Quiz Draft
-                          </Button>
-                        </Link>
 
                         {/* Edit Lesson */}
                         <Link to={`/instructor/lessons/${lesson.id}`}>
@@ -379,8 +431,189 @@ export const CurriculumBuilderPage: React.FC = () => {
                   </p>
                 )}
               </div>
+
+              {/* ========================================================================= */}
+              {/* MODULE ASSESSMENT CHECKPOINT BLOCK (Visible under every module)           */}
+              {/* ========================================================================= */}
+              <div className="pl-4 sm:pl-10 pt-2 border-t border-slate-100">
+                {module.quiz ? (
+                  <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <div className="p-2 rounded-lg bg-white border border-indigo-200 text-primary shrink-0 mt-0.5">
+                        <Layers className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-primary uppercase tracking-wider">
+                            Module {mIdx + 1} Assessment Checkpoint
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-primary font-bold">
+                            {module.quiz.questions_count || 0} Questions
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white text-charcoal-muted border border-indigo-100 font-medium">
+                            Pass: {module.quiz.passing_score}%
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-bold text-charcoal mt-0.5">{module.quiz.title}</h4>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Link to={`/instructor/quizzes/${module.quiz.id}/edit`}>
+                        <Button size="sm" variant="outline" leftIcon={<Eye className="w-3.5 h-3.5" />}>
+                          View / Edit
+                        </Button>
+                      </Link>
+                      <Link to={`/instructor/courses/${courseId}/ai-generate?moduleId=${module.id}`}>
+                        <Button size="sm" variant="outline" leftIcon={<Sparkles className="w-3.5 h-3.5 text-primary" />}>
+                          Generate AI
+                        </Button>
+                      </Link>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                        onClick={() => {
+                          if (module.quiz && window.confirm("Delete this quiz?\n\nThis will remove the quiz and its questions. This action cannot be undone.")) {
+                            deleteQuizMutation.mutate(module.quiz.id);
+                          }
+                        }}
+                        leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                      >
+                        Delete Quiz
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 p-4 rounded-xl border border-dashed border-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 text-charcoal-muted">
+                      <HelpCircle className="w-4 h-4 text-slate-400 shrink-0" />
+                      <span>
+                        <strong>No Module Checkpoint Configured</strong> — Add assessment questions to enforce competency unlock.
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setQuizTargetType('MODULE');
+                          setQuizTargetId(module.id);
+                          setQuizTitle(`Module ${mIdx + 1}: ${module.title} Checkpoint`);
+                          setQuizPassingScore(70);
+                          setQuizMaxAttempts(2);
+                          setIsQuizModalOpen(true);
+                        }}
+                        leftIcon={<Plus className="w-3.5 h-3.5" />}
+                      >
+                        Create Manually
+                      </Button>
+                      <Link to={`/instructor/courses/${courseId}/ai-generate?moduleId=${module.id}`}>
+                        <Button size="sm" leftIcon={<Sparkles className="w-3.5 h-3.5" />}>
+                          Generate with AI
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           ))}
+
+          {/* ========================================================================= */}
+          {/* FINAL COURSE ASSESSMENT BLOCK (Course Level)                             */}
+          {/* ========================================================================= */}
+          <div className="bg-gradient-to-r from-amber-50/70 to-indigo-50/70 p-6 rounded-2xl border border-amber-200 shadow-card space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-200/80">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-white border border-amber-300 text-amber-600 shrink-0">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">
+                    Course Level Graduation
+                  </span>
+                  <h3 className="text-base font-bold text-charcoal">Final Course Certification Assessment</h3>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {course?.final_quiz ? (
+                  <div className="flex items-center gap-2">
+                    <Link to={`/instructor/quizzes/${course.final_quiz.id}/edit`}>
+                      <Button size="sm" variant="outline" leftIcon={<Eye className="w-3.5 h-3.5" />}>
+                        View / Edit
+                      </Button>
+                    </Link>
+                    <Link to={`/instructor/courses/${courseId}/ai-generate?target=FINAL`}>
+                      <Button size="sm" variant="outline" leftIcon={<Sparkles className="w-3.5 h-3.5 text-primary" />}>
+                        Generate AI
+                      </Button>
+                    </Link>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                      onClick={() => {
+                        if (course?.final_quiz && window.confirm("Delete this quiz?\n\nThis will remove the quiz and its questions. This action cannot be undone.")) {
+                          deleteQuizMutation.mutate(course.final_quiz.id);
+                        }
+                      }}
+                      leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                    >
+                      Delete Exam
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setQuizTargetType('FINAL');
+                        setQuizTargetId(courseId!);
+                        setQuizTitle(`${course?.title} Final Certification Exam`);
+                        setQuizPassingScore(75);
+                        setQuizMaxAttempts(3);
+                        setIsQuizModalOpen(true);
+                      }}
+                      leftIcon={<Plus className="w-3.5 h-3.5" />}
+                    >
+                      Create Final Assessment Manually
+                    </Button>
+                    <Link to={`/instructor/courses/${courseId}/ai-generate?target=FINAL`}>
+                      <Button size="sm" leftIcon={<Sparkles className="w-3.5 h-3.5" />}>
+                        Generate Final Assessment with AI
+                      </Button>
+                    </Link>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {course?.final_quiz ? (
+              <div className="flex items-center justify-between text-xs text-charcoal bg-white/80 p-3.5 rounded-xl border border-amber-200">
+                <div>
+                  <span className="font-bold text-charcoal">{course.final_quiz.title}</span>
+                  <div className="flex items-center gap-3 text-charcoal-muted mt-0.5 text-[11px]">
+                    <span>{course.final_quiz.questions_count || 0} Questions</span>
+                    <span>•</span>
+                    <span>Passing Score: {course.final_quiz.passing_score}%</span>
+                    <span>•</span>
+                    <span>Max Attempts: {course.final_quiz.max_attempts}</span>
+                  </div>
+                </div>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                  Active Exam
+                </span>
+              </div>
+            ) : (
+              <p className="text-xs text-charcoal-muted">
+                The Final Course Assessment tests comprehensive mastery across all modules before issuing a verified certificate.
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -460,6 +693,50 @@ export const CurriculumBuilderPage: React.FC = () => {
               disabled={!lessonTitle.trim()}
             >
               Create Lesson
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Manual Create Quiz Modal */}
+      <Modal
+        isOpen={isQuizModalOpen}
+        onClose={() => setIsQuizModalOpen(false)}
+        title={`Configure ${quizTargetType === 'FINAL' ? 'Final Course Exam' : 'Module Checkpoint'}`}
+        description="Set assessment parameters, passing criteria, and attempt rules."
+      >
+        <div className="space-y-4">
+          <Input
+            label="Assessment Title"
+            value={quizTitle}
+            onChange={(e) => setQuizTitle(e.target.value)}
+          />
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Passing Score (%)"
+              type="number"
+              value={quizPassingScore}
+              onChange={(e) => setQuizPassingScore(Number(e.target.value))}
+            />
+            <Input
+              label="Max Attempts per Cycle"
+              type="number"
+              value={quizMaxAttempts}
+              onChange={(e) => setQuizMaxAttempts(Number(e.target.value))}
+            />
+          </div>
+
+          <div className="pt-4 border-t border-border flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsQuizModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createQuizMutation.mutate()}
+              isLoading={createQuizMutation.isPending}
+              disabled={!quizTitle.trim()}
+            >
+              Create Assessment Checkpoint
             </Button>
           </div>
         </div>

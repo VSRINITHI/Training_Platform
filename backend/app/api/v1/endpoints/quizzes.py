@@ -27,6 +27,7 @@ from app.schemas.quiz import (
     AIQuizDraftUpdate,
     AIQuizDraftReviewRequest,
     AIQuizDraftResponse,
+    AIQuizGenerateRequest,
 )
 from app.schemas.assessment import (
     QuizSubmissionRequest,
@@ -37,8 +38,9 @@ from app.schemas.assessment import (
 from app.schemas.course import ReorderRequest
 from app.schemas.common import MessageResponse
 from app.models.enrollment import Enrollment, ModuleProgress, LessonProgress
-from app.models.assessment import QuizAttempt
+from app.models.assessment import QuizAttempt, Certificate
 from app.models.enums import EnrollmentStatus, ModuleProgressStatus
+from app.services.nvidia_service import generate_quiz_questions, extract_text_from_document
 
 router = APIRouter(tags=["Quizzes & Assessments"])
 
@@ -152,15 +154,10 @@ def create_quiz(
     # Validate target and determine parent course
     course = None
     if quiz_in.quiz_type == QuizType.LESSON:
-        lesson = db.query(Lesson).filter(Lesson.id == quiz_in.lesson_id).first()
-        if not lesson:
-            raise HTTPException(status_code=400, detail="Target lesson does not exist")
-        module = db.query(Module).filter(Module.id == lesson.module_id).first()
-        course = db.query(Course).filter(Course.id == module.course_id).first()
-        # Check existing quiz for lesson
-        existing = db.query(Quiz).filter(Quiz.lesson_id == quiz_in.lesson_id, Quiz.quiz_type == QuizType.LESSON).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="A quiz already exists for this lesson")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Lesson-level quizzes are deprecated and not supported. Quizzes must be created at the Module level (Module Quiz) or Course level (Final Course Assessment).",
+        )
 
     elif quiz_in.quiz_type == QuizType.MODULE:
         module = db.query(Module).filter(Module.id == quiz_in.module_id).first()
@@ -262,13 +259,15 @@ def delete_quiz(
     _check_quiz_ownership(quiz, current_user, db)
 
     try:
+        # Delete associated quiz attempts first to maintain relational integrity
+        db.query(QuizAttempt).filter(QuizAttempt.quiz_id == quiz_id).delete(synchronize_session=False)
         db.delete(quiz)
         db.commit()
-    except IntegrityError:
+    except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=400,
-            detail="Cannot delete quiz: learner attempts exist for this quiz (audit history is preserved)",
+            detail=f"Failed to delete quiz: {str(e)}",
         )
 
     return MessageResponse(message=f"Quiz '{quiz.title}' deleted successfully")
@@ -563,6 +562,387 @@ def create_ai_quiz_draft(
     return draft
 
 
+@router.post(
+    "/lessons/{lesson_id}/ai-generate",
+    response_model=AIQuizDraftResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate AI quiz questions for a lesson via NVIDIA Llama 3.1",
+)
+def generate_ai_quiz_for_lesson(
+    lesson_id: uuid.UUID,
+    request: AIQuizGenerateRequest,
+    current_user: User = Depends(require_role(UserRole.INSTRUCTOR, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+) -> AIQuizDraftResponse:
+    """
+    Calls NVIDIA's OpenAI-compatible API to generate structured quiz questions
+    based on the lesson's title, body, and course context.
+    Validates output via Pydantic and stores the result as an AIQuizDraft with PENDING_REVIEW status.
+    """
+    lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+
+    module = db.query(Module).filter(Module.id == lesson.module_id).first()
+    course = db.query(Course).filter(Course.id == module.course_id).first()
+    if current_user.role != UserRole.ADMIN and course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not have permission to generate AI drafts for this lesson")
+
+    # Grounding priority:
+    # 1. Lesson content body
+    # 2. Extracted text from uploaded document
+    # 3. Video transcript (if present)
+    grounded_parts = []
+    if lesson.content_body and lesson.content_body.strip():
+        grounded_parts.append(lesson.content_body.strip())
+
+    if lesson.document_url:
+        doc_text = extract_text_from_document(lesson.document_url)
+        if doc_text:
+            grounded_parts.append(f"Document Reference Content:\n{doc_text}")
+
+    combined_content = "\n\n".join(grounded_parts).strip()
+    if len(combined_content) < 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Insufficient lesson learning content to generate quiz questions. Please add lesson text or attach reference materials before generating questions.",
+        )
+
+    validated_payload, raw_dict = generate_quiz_questions(
+        course_title=course.title,
+        module_title=module.title,
+        lesson_titles=[lesson.title],
+        lesson_content=combined_content,
+        difficulty=request.difficulty or "INTERMEDIATE",
+        num_questions=request.num_questions,
+        question_types=request.question_types,
+        custom_instructions=request.custom_instructions,
+    )
+
+    draft = AIQuizDraft(
+        lesson_id=lesson_id,
+        instructor_id=current_user.id,
+        prompt_context=request.custom_instructions or f"Auto-generated for lesson: {lesson.title}",
+        raw_llm_response=raw_dict,
+        status=AIDraftStatus.PENDING_REVIEW,
+    )
+    db.add(draft)
+    db.commit()
+    db.refresh(draft)
+    return draft
+
+
+@router.get(
+    "/modules/{module_id}/quiz",
+    response_model=QuizResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get active quiz for a module (Authoring mode)",
+)
+def get_module_quiz(
+    module_id: uuid.UUID,
+    current_user: User = Depends(require_role(UserRole.INSTRUCTOR, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+) -> QuizResponse:
+    """
+    Returns the active module assessment quiz for instructor authoring and preview.
+    """
+    module = db.query(Module).filter(Module.id == module_id).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    course = db.query(Course).filter(Course.id == module.course_id).first()
+    if current_user.role != UserRole.ADMIN and course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not have permission to view quizzes for this course")
+
+    quiz = (
+        db.query(Quiz)
+        .options(selectinload(Quiz.questions).selectinload(Question.options))
+        .filter(Quiz.module_id == module_id, Quiz.quiz_type == QuizType.MODULE, Quiz.is_active == True)
+        .first()
+    )
+    if not quiz:
+        raise HTTPException(status_code=404, detail="No quiz configured for this module")
+    return quiz
+
+
+@router.get(
+    "/courses/{course_id}/final-quiz",
+    response_model=QuizResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get active final certification exam quiz for a course (Authoring mode)",
+)
+def get_course_final_quiz(
+    course_id: uuid.UUID,
+    current_user: User = Depends(require_role(UserRole.INSTRUCTOR, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+) -> QuizResponse:
+    """
+    Returns the active final course assessment quiz for instructor authoring.
+    """
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    if current_user.role != UserRole.ADMIN and course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not have permission to view quizzes for this course")
+
+    quiz = (
+        db.query(Quiz)
+        .options(selectinload(Quiz.questions).selectinload(Question.options))
+        .filter(Quiz.course_id == course_id, Quiz.quiz_type == QuizType.FINAL, Quiz.is_active == True)
+        .first()
+    )
+    if not quiz:
+        raise HTTPException(status_code=404, detail="No final certification exam configured for this course")
+    return quiz
+
+
+@router.get(
+    "/courses/{course_id}/quizzes",
+    response_model=List[QuizResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List all module and final assessment quizzes for a course",
+)
+def list_course_quizzes(
+    course_id: uuid.UUID,
+    current_user: User = Depends(require_role(UserRole.INSTRUCTOR, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+) -> List[QuizResponse]:
+    """
+    Lists all module quizzes and course final exam quizzes for authoring.
+    """
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    if current_user.role != UserRole.ADMIN and course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not have permission to view quizzes for this course")
+
+    module_ids = [m.id for m in db.query(Module.id).filter(Module.course_id == course_id).all()]
+
+    quizzes = (
+        db.query(Quiz)
+        .options(selectinload(Quiz.questions).selectinload(Question.options))
+        .filter(
+            (Quiz.course_id == course_id) | (Quiz.module_id.in_(module_ids)),
+            Quiz.is_active == True,
+        )
+        .all()
+    )
+    return quizzes
+
+
+@router.post(
+    "/modules/{module_id}/ai-generate",
+    response_model=AIQuizDraftResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate AI quiz questions for a module with selective grounding",
+)
+def generate_ai_quiz_for_module(
+    module_id: uuid.UUID,
+    request: AIQuizGenerateRequest,
+    current_user: User = Depends(require_role(UserRole.INSTRUCTOR, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+) -> AIQuizDraftResponse:
+    """
+    Calls NVIDIA's OpenAI-compatible API to generate grounded module assessment questions
+    incorporating selected lessons and/or uploaded documents inside the module.
+    Quarantines draft as an AIQuizDraft with PENDING_REVIEW status.
+    """
+    module = db.query(Module).filter(Module.id == module_id).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    course = db.query(Course).filter(Course.id == module.course_id).first()
+    if current_user.role != UserRole.ADMIN and course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not have permission to generate AI drafts for this module")
+
+    lessons_query = db.query(Lesson).filter(Lesson.module_id == module_id)
+    if request.lesson_ids:
+        lessons_query = lessons_query.filter(Lesson.id.in_(request.lesson_ids))
+    lessons = lessons_query.order_by(Lesson.order_index.asc()).all()
+
+    grounded_parts = []
+    lesson_titles = []
+    for l in lessons:
+        lesson_titles.append(l.title)
+        l_parts = []
+        if l.content_body and l.content_body.strip():
+            l_parts.append(l.content_body.strip())
+        if l.document_url and (not request.document_urls or l.document_url in request.document_urls):
+            d_text = extract_text_from_document(l.document_url)
+            if d_text:
+                l_parts.append(f"Document Material ({l.title}):\n{d_text}")
+        if l_parts:
+            grounded_parts.append(f"--- Lesson: {l.title} ---\n" + "\n\n".join(l_parts))
+
+    # Also extract any standalone requested document URLs
+    if request.document_urls:
+        for doc_url in request.document_urls:
+            doc_already_included = any(doc_url in part for part in grounded_parts)
+            if not doc_already_included:
+                extracted = extract_text_from_document(doc_url)
+                if extracted:
+                    grounded_parts.append(f"Document Material:\n{extracted}")
+
+    combined_content = "\n\n".join(grounded_parts).strip()
+    if len(combined_content) < 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Insufficient source material to generate reliable quiz questions. Please select or add more learning content.",
+        )
+
+    validated_payload, raw_dict = generate_quiz_questions(
+        course_title=course.title,
+        module_title=module.title,
+        lesson_titles=lesson_titles if lesson_titles else [module.title],
+        lesson_content=combined_content,
+        difficulty=request.difficulty or "INTERMEDIATE",
+        num_questions=request.num_questions,
+        question_types=request.question_types,
+        custom_instructions=request.custom_instructions,
+    )
+
+    representative_lesson = lessons[0] if lessons else db.query(Lesson).filter(Lesson.module_id == module_id).first()
+    if not representative_lesson:
+        raise HTTPException(status_code=400, detail="Module must contain at least one lesson")
+
+    draft = AIQuizDraft(
+        lesson_id=representative_lesson.id,
+        instructor_id=current_user.id,
+        prompt_context=request.custom_instructions or f"Auto-generated for module: {module.title}",
+        raw_llm_response=raw_dict,
+        status=AIDraftStatus.PENDING_REVIEW,
+    )
+    db.add(draft)
+    db.commit()
+    db.refresh(draft)
+    return draft
+
+
+@router.post(
+    "/courses/{course_id}/ai-generate",
+    response_model=AIQuizDraftResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate AI quiz questions for Course Final Assessment with selective module grounding",
+)
+def generate_ai_quiz_for_course(
+    course_id: uuid.UUID,
+    request: AIQuizGenerateRequest,
+    current_user: User = Depends(require_role(UserRole.INSTRUCTOR, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+) -> AIQuizDraftResponse:
+    """
+    Calls NVIDIA's OpenAI-compatible API to generate comprehensive Final Course Assessment questions
+    incorporating selected modules and/or attached documents.
+    Quarantines draft as an AIQuizDraft with PENDING_REVIEW status.
+    """
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    if current_user.role != UserRole.ADMIN and course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not have permission to generate AI drafts for this course")
+
+    modules_query = db.query(Module).filter(Module.course_id == course_id)
+    if request.module_ids:
+        modules_query = modules_query.filter(Module.id.in_(request.module_ids))
+    modules = modules_query.order_by(Module.order_index.asc()).all()
+
+    if not modules:
+        raise HTTPException(status_code=400, detail="Course must contain at least one module to generate final assessment")
+
+    grounded_parts = []
+    lesson_titles = []
+    first_lesson = None
+
+    for mod in modules:
+        mod_lessons = db.query(Lesson).filter(Lesson.module_id == mod.id).order_by(Lesson.order_index.asc()).all()
+        if not first_lesson and mod_lessons:
+            first_lesson = mod_lessons[0]
+
+        mod_parts = []
+        for l in mod_lessons:
+            if request.lesson_ids and l.id not in request.lesson_ids:
+                continue
+            lesson_titles.append(l.title)
+            if l.content_body and l.content_body.strip():
+                mod_parts.append(l.content_body.strip())
+            if l.document_url and (not request.document_urls or l.document_url in request.document_urls):
+                d_text = extract_text_from_document(l.document_url)
+                if d_text:
+                    mod_parts.append(f"Document Material ({l.title}):\n{d_text}")
+
+        if mod_parts:
+            grounded_parts.append(f"=== Module: {mod.title} ===\n" + "\n\n".join(mod_parts))
+
+    # Also extract any standalone requested document URLs
+    if request.document_urls:
+        for doc_url in request.document_urls:
+            doc_already_included = any(doc_url in part for part in grounded_parts)
+            if not doc_already_included:
+                extracted = extract_text_from_document(doc_url)
+                if extracted:
+                    grounded_parts.append(f"Document Reference Content:\n{extracted}")
+
+    combined_content = "\n\n".join(grounded_parts).strip()
+    if len(combined_content) < 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Insufficient source material to generate reliable quiz questions. Please select or add more learning content.",
+        )
+
+    validated_payload, raw_dict = generate_quiz_questions(
+        course_title=course.title,
+        module_title=f"Comprehensive Final Assessment ({course.title})",
+        lesson_titles=lesson_titles[:10],
+        lesson_content=combined_content,
+        difficulty=request.difficulty or "ADVANCED",
+        num_questions=request.num_questions,
+        question_types=request.question_types,
+        custom_instructions=request.custom_instructions or "Generate a rigorous final certification assessment covering core competencies.",
+    )
+
+    if not first_lesson:
+        raise HTTPException(status_code=400, detail="Course must contain at least one lesson to quarantine draft")
+
+    draft = AIQuizDraft(
+        lesson_id=first_lesson.id,
+        instructor_id=current_user.id,
+        prompt_context=request.custom_instructions or f"Auto-generated Final Exam for course: {course.title}",
+        raw_llm_response=raw_dict,
+        status=AIDraftStatus.PENDING_REVIEW,
+    )
+    db.add(draft)
+    db.commit()
+    db.refresh(draft)
+    return draft
+
+
+@router.get(
+    "/ai-drafts/{draft_id}",
+    response_model=AIQuizDraftResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get single AI quiz draft details",
+)
+def get_ai_quiz_draft(
+    draft_id: uuid.UUID,
+    current_user: User = Depends(require_role(UserRole.INSTRUCTOR, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+) -> AIQuizDraftResponse:
+    draft = db.query(AIQuizDraft).filter(AIQuizDraft.id == draft_id).first()
+    if not draft:
+        raise HTTPException(status_code=404, detail="AI draft not found")
+
+    lesson = db.query(Lesson).filter(Lesson.id == draft.lesson_id).first()
+    module = db.query(Module).filter(Module.id == lesson.module_id).first()
+    course = db.query(Course).filter(Course.id == module.course_id).first()
+    if current_user.role != UserRole.ADMIN and course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not have permission to view this AI draft")
+
+    return draft
+
+
 @router.get(
     "/lessons/{lesson_id}/ai-drafts",
     response_model=List[AIQuizDraftResponse],
@@ -586,6 +966,65 @@ def list_ai_quiz_drafts(
     drafts = (
         db.query(AIQuizDraft)
         .filter(AIQuizDraft.lesson_id == lesson_id)
+        .order_by(AIQuizDraft.created_at.desc())
+        .all()
+    )
+    return drafts
+
+
+@router.get(
+    "/modules/{module_id}/ai-drafts",
+    response_model=List[AIQuizDraftResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List quarantined AI drafts for a module",
+)
+def list_module_ai_drafts(
+    module_id: uuid.UUID,
+    current_user: User = Depends(require_role(UserRole.INSTRUCTOR, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+) -> List[AIQuizDraftResponse]:
+    module = db.query(Module).filter(Module.id == module_id).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+
+    course = db.query(Course).filter(Course.id == module.course_id).first()
+    if current_user.role != UserRole.ADMIN and course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not have permission to view AI drafts for this module")
+
+    lesson_ids = [l.id for l in module.lessons]
+    drafts = (
+        db.query(AIQuizDraft)
+        .filter(AIQuizDraft.lesson_id.in_(lesson_ids))
+        .order_by(AIQuizDraft.created_at.desc())
+        .all()
+    )
+    return drafts
+
+
+@router.get(
+    "/courses/{course_id}/ai-drafts",
+    response_model=List[AIQuizDraftResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List quarantined AI drafts for a course",
+)
+def list_course_ai_drafts(
+    course_id: uuid.UUID,
+    current_user: User = Depends(require_role(UserRole.INSTRUCTOR, UserRole.ADMIN)),
+    db: Session = Depends(get_db),
+) -> List[AIQuizDraftResponse]:
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    if current_user.role != UserRole.ADMIN and course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not have permission to view AI drafts for this course")
+
+    all_lesson_ids = []
+    for mod in course.modules:
+        all_lesson_ids.extend([l.id for l in mod.lessons])
+
+    drafts = (
+        db.query(AIQuizDraft)
+        .filter(AIQuizDraft.lesson_id.in_(all_lesson_ids))
         .order_by(AIQuizDraft.created_at.desc())
         .all()
     )
@@ -622,7 +1061,7 @@ def review_ai_quiz_draft(
     Instructor/Admin review gate:
     - AI draft can only be reviewed ONCE (must be in PENDING_REVIEW status).
     - If APPROVED and import_to_quiz=True: Parses the approved AI generated questions
-      and converts them into actual Question and QuestionOption records on the lesson quiz.
+      and converts them into actual Question and QuestionOption records on the target quiz (Lesson, Module, or Final Exam).
     - If DISCARDED: Updates status and leaves draft quarantined.
     """
     draft = db.query(AIQuizDraft).filter(AIQuizDraft.id == draft_id).first()
@@ -645,21 +1084,56 @@ def review_ai_quiz_draft(
     draft.reviewed_at = datetime.now(timezone.utc)
 
     if review_in.status == AIDraftStatus.APPROVED and review_in.import_to_quiz:
-        # Find or create lesson quiz
-        quiz = db.query(Quiz).filter(Quiz.lesson_id == draft.lesson_id, Quiz.quiz_type == QuizType.LESSON).first()
-        if not quiz:
-            quiz = Quiz(
-                title=f"Quiz: {lesson.title}",
-                quiz_type=QuizType.LESSON,
-                lesson_id=draft.lesson_id,
-                passing_score=Decimal("70.00"),
-                max_attempts=3,
-                is_active=True,
-            )
-            db.add(quiz)
-            db.flush()
+        target_type = review_in.target_type or QuizType.MODULE
+        quiz = None
 
-        # Parse raw_llm_response questions if formatted as a list
+        if review_in.target_quiz_id:
+            quiz = db.query(Quiz).filter(Quiz.id == review_in.target_quiz_id).first()
+        elif target_type == QuizType.MODULE:
+            target_module_id = review_in.target_id or module.id
+            quiz = db.query(Quiz).filter(Quiz.module_id == target_module_id, Quiz.quiz_type == QuizType.MODULE).first()
+            if not quiz:
+                quiz = Quiz(
+                    title=f"Assessment: {module.title}",
+                    quiz_type=QuizType.MODULE,
+                    module_id=target_module_id,
+                    passing_score=Decimal("70.00"),
+                    max_attempts=2,
+                    is_active=True,
+                )
+                db.add(quiz)
+                db.flush()
+        elif target_type == QuizType.FINAL:
+            target_course_id = review_in.target_id or course.id
+            quiz = db.query(Quiz).filter(Quiz.course_id == target_course_id, Quiz.quiz_type == QuizType.FINAL).first()
+            if not quiz:
+                quiz = Quiz(
+                    title=f"Final Certification Exam: {course.title}",
+                    quiz_type=QuizType.FINAL,
+                    course_id=target_course_id,
+                    passing_score=Decimal("70.00"),
+                    max_attempts=3,
+                    is_active=True,
+                )
+                db.add(quiz)
+                db.flush()
+        else:
+            # Default: Lesson Quiz
+            target_lesson_id = review_in.target_id or draft.lesson_id
+            quiz = db.query(Quiz).filter(Quiz.lesson_id == target_lesson_id, Quiz.quiz_type == QuizType.LESSON).first()
+            if not quiz:
+                quiz = Quiz(
+                    title=f"Quiz: {lesson.title}",
+                    quiz_type=QuizType.LESSON,
+                    lesson_id=target_lesson_id,
+                    passing_score=Decimal("70.00"),
+                    max_attempts=3,
+                    is_active=True,
+                )
+                db.add(quiz)
+                db.flush()
+
+        # Parse raw_llm_response questions
         raw_items = draft.raw_llm_response
         if isinstance(raw_items, dict) and "questions" in raw_items:
             raw_items = raw_items["questions"]
@@ -669,11 +1143,12 @@ def review_ai_quiz_draft(
                 if isinstance(q_data, dict):
                     max_order = db.query(func.max(Question.order_index)).filter(Question.quiz_id == quiz.id).scalar()
                     q_order = (max_order or 0) + 1
-                    
+
                     q_type = QuestionType.MCQ
-                    if q_data.get("question_type") == "TRUE_FALSE":
+                    type_str = str(q_data.get("question_type", "")).upper()
+                    if type_str == "TRUE_FALSE":
                         q_type = QuestionType.TRUE_FALSE
-                    elif q_data.get("question_type") == "MULTI_SELECT":
+                    elif type_str == "MULTI_SELECT":
                         q_type = QuestionType.MULTI_SELECT
 
                     question = Question(
@@ -816,10 +1291,29 @@ def submit_quiz_answers(
                 detail="Module is in NEEDS_RELEARNING status. You must re-study and reset lessons before attempting the quiz again.",
             )
 
-        if module_progress.attempts_used >= quiz.max_attempts:
+        # Enforce that all lessons in this module are completed before taking module quiz
+        module_lessons = db.query(Lesson).filter(Lesson.module_id == target_module.id).all()
+        if module_lessons:
+            completed_lesson_count = (
+                db.query(LessonProgress)
+                .filter(
+                    LessonProgress.module_progress_id == module_progress.id,
+                    LessonProgress.is_completed == True,
+                )
+                .count()
+            )
+            if completed_lesson_count < len(module_lessons):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"All {len(module_lessons)} lessons in module '{target_module.title}' must be completed before attempting the module quiz.",
+                )
+
+        # Enforce 2-attempt limit for module quiz completion cycle
+        max_cycle_attempts = 2 if quiz.quiz_type == QuizType.MODULE else quiz.max_attempts
+        if module_progress.attempts_used >= max_cycle_attempts:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Maximum quiz attempts ({quiz.max_attempts}) reached for this cycle. Relearning required.",
+                detail=f"Maximum quiz attempts ({max_cycle_attempts}) reached for this cycle. Relearning required.",
             )
 
     elif quiz.quiz_type == QuizType.FINAL:
@@ -864,10 +1358,11 @@ def submit_quiz_answers(
                 attempt_cycle = past_attempts[-1].attempt_cycle
     else:
         attempt_cycle = 1
-        if len(past_attempts) >= quiz.max_attempts and not any(a.is_passed for a in past_attempts):
+        max_attempts_limit = 2 if quiz.quiz_type == QuizType.MODULE else quiz.max_attempts
+        if len(past_attempts) >= max_attempts_limit and not any(a.is_passed for a in past_attempts):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Maximum quiz attempts ({quiz.max_attempts}) reached.",
+                detail=f"Maximum quiz attempts ({max_attempts_limit}) reached.",
             )
 
     # 4. Grading & Scoring
@@ -911,6 +1406,7 @@ def submit_quiz_answers(
 
     is_passed = score_pct >= quiz.passing_score
     relearning_triggered = False
+    max_cycle_limit = 2 if quiz.quiz_type == QuizType.MODULE else quiz.max_attempts
 
     # 5. Handle Side-Effects
     if quiz.quiz_type == QuizType.MODULE and module_progress:
@@ -919,7 +1415,7 @@ def submit_quiz_answers(
             module_progress.status = ModuleProgressStatus.COMPLETED
             module_progress.completed_at = datetime.now(timezone.utc)
         else:
-            if module_progress.attempts_used >= quiz.max_attempts:
+            if module_progress.attempts_used >= max_cycle_limit:
                 module_progress.status = ModuleProgressStatus.NEEDS_RELEARNING
                 module_progress.relearning_triggered_at = datetime.now(timezone.utc)
                 relearning_triggered = True
@@ -958,6 +1454,27 @@ def submit_quiz_answers(
     elif quiz.quiz_type == QuizType.FINAL and is_passed:
         enrollment.status = EnrollmentStatus.COMPLETED
         enrollment.completed_at = datetime.now(timezone.utc)
+
+        # Automatically issue Certificate row if course offers certificates and not already issued
+        if getattr(course, "has_certificate", True):
+            existing_cert = db.query(Certificate).filter(Certificate.enrollment_id == enrollment.id).first()
+            if not existing_cert:
+                import secrets
+                import hashlib
+                year = datetime.now(timezone.utc).year
+                cert_num = f"DC-{year}-{secrets.token_hex(4).upper()}"
+                ver_hash = hashlib.sha256(
+                    f"{current_user.id}:{course.id}:{datetime.now(timezone.utc).isoformat()}".encode("utf-8")
+                ).hexdigest()
+                cert = Certificate(
+                    enrollment_id=enrollment.id,
+                    user_id=current_user.id,
+                    course_id=course.id,
+                    certificate_number=cert_num,
+                    issued_at=datetime.now(timezone.utc),
+                    verification_hash=ver_hash,
+                )
+                db.add(cert)
 
     # 6. Insert Append-Only Quiz Attempt Log
     attempt = QuizAttempt(

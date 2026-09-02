@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -12,12 +12,8 @@ import {
   ArrowRight,
   Menu,
   X,
-  ChevronLeft,
-  ChevronRight,
-  HelpCircle,
   RotateCcw,
   Sparkles,
-  Edit3,
   Trash2,
   Copy,
   Check,
@@ -25,6 +21,10 @@ import {
   PanelRightClose,
   PanelRightOpen,
   StickyNote,
+  HelpCircle,
+  Download,
+  Eye,
+  AlertTriangle,
 } from 'lucide-react';
 import { coursesApi } from '../../api/courses';
 import { lessonsApi } from '../../api/lessons';
@@ -33,9 +33,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { Button } from '../../components/ui/Button';
 import { ProgressBar } from '../../components/ui/ProgressBar';
+import { Modal } from '../../components/ui/Modal';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { ErrorState } from '../../components/ui/ErrorState';
-import { LessonItem, ModuleDetail } from '../../types';
 
 export const LearningWorkspacePage: React.FC = () => {
   const { courseId } = useParams<{ courseId: string }>();
@@ -48,13 +48,14 @@ export const LearningWorkspacePage: React.FC = () => {
   const [mobileCurriculumOpen, setMobileCurriculumOpen] = useState(false);
   const [mobileActiveTab, setMobileActiveTab] = useState<'content' | 'notes'>('content');
   const [showDesktopNotes, setShowDesktopNotes] = useState(true);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
 
   // Note State
   const [noteContent, setNoteContent] = useState('');
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // 1. Fetch Course details (with modules & lessons)
+  // 1. Fetch Course details
   const { data: course, isLoading: loadingCourse } = useQuery({
     queryKey: ['course-workspace', courseId],
     queryFn: () => coursesApi.get(courseId!),
@@ -139,12 +140,9 @@ export const LearningWorkspacePage: React.FC = () => {
   const markLessonMutation = useMutation({
     mutationFn: (lessonId: string) => lessonsApi.markProgress(lessonId, true),
     onSuccess: () => {
-      // Invalidate all related progress cache keys
       queryClient.invalidateQueries({ queryKey: ['course-progress-hierarchy', courseId] });
       queryClient.invalidateQueries({ queryKey: ['my-enrollments'] });
-      queryClient.invalidateQueries({ queryKey: ['recommended-courses'] });
       queryClient.invalidateQueries({ queryKey: ['course-workspace', courseId] });
-
       success('Lesson Completed!', 'Your progress has been recorded.');
       findAndSelectNextLesson();
     },
@@ -159,7 +157,7 @@ export const LearningWorkspacePage: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-progress-hierarchy', courseId] });
       queryClient.invalidateQueries({ queryKey: ['my-enrollments'] });
-      success('Relearning Reset', 'Module lessons are reset for relearning review.');
+      success('Module Reset for Relearning', 'Module lessons are ready for review.');
     },
     onError: (err: any) => {
       toastError('Reset Failed', err.message);
@@ -207,7 +205,6 @@ export const LearningWorkspacePage: React.FC = () => {
     });
   });
 
-  // Granular lesson-level progress calculation
   const allLessons = modules.flatMap((m) => m.lessons || []);
   const totalLessonsCount = allLessons.length;
   const completedLessonsCount = allLessons.filter((l) => completedLessonIds.has(l.id)).length;
@@ -215,9 +212,7 @@ export const LearningWorkspacePage: React.FC = () => {
   const dynamicProgressPct =
     progressData?.is_course_completed || progressData?.status === 'COMPLETED'
       ? 100
-      : totalLessonsCount > 0
-      ? Math.round((completedLessonsCount / totalLessonsCount) * 100)
-      : Math.round(progressData?.progress_pct || 0);
+      : Math.round(Number(progressData?.progress_pct || 0));
 
   const isCurrentLessonCompleted = activeLessonId ? completedLessonIds.has(activeLessonId) : false;
 
@@ -231,10 +226,9 @@ export const LearningWorkspacePage: React.FC = () => {
           onClick={() => setMobileCurriculumOpen(true)}
           leftIcon={<Menu className="w-4 h-4" />}
         >
-          Curriculum
+          Curriculum Tree
         </Button>
 
-        {/* Mobile View Mode Switcher */}
         <div className="flex bg-slate-100 p-0.5 rounded-lg">
           <button
             type="button"
@@ -265,10 +259,10 @@ export const LearningWorkspacePage: React.FC = () => {
       {/* 3-Column Desktop Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* ========================================================================= */}
-        {/* COLUMN 1: Curriculum Sidebar (Desktop & Mobile Drawer)                     */}
+        {/* COLUMN 1: Curriculum & Module Quiz Sidebar                                 */}
         {/* ========================================================================= */}
         <div
-          className={`lg:col-span-3 ${
+          className={`lg:col-span-4 ${
             mobileCurriculumOpen
               ? 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex justify-start'
               : 'hidden lg:block'
@@ -276,12 +270,12 @@ export const LearningWorkspacePage: React.FC = () => {
           onClick={() => setMobileCurriculumOpen(false)}
         >
           <div
-            className={`bg-white rounded-2xl border border-border shadow-card p-4 flex flex-col max-h-[85vh] overflow-hidden ${
-              mobileCurriculumOpen ? 'w-80 h-full' : 'w-full'
+            className={`bg-white rounded-2xl border border-border shadow-card p-4 flex flex-col max-h-[88vh] overflow-hidden ${
+              mobileCurriculumOpen ? 'w-84 h-full' : 'w-full'
             }`}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header & Dynamic Progress */}
+            {/* Header & Dynamic Course Progress */}
             <div className="pb-3 border-b border-border/80 shrink-0">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-charcoal-muted">
@@ -294,47 +288,60 @@ export const LearningWorkspacePage: React.FC = () => {
                 )}
               </div>
               <div className="flex items-center justify-between text-xs font-semibold mb-1">
-                <span className="text-charcoal truncate max-w-[180px]">{course.title}</span>
+                <span className="text-charcoal truncate max-w-[200px]">{course.title}</span>
                 <span className="text-primary font-bold">{dynamicProgressPct}%</span>
               </div>
               <ProgressBar value={dynamicProgressPct} size="sm" />
               <p className="text-[10px] text-charcoal-muted mt-1.5 flex items-center justify-between">
                 <span>{completedLessonsCount} of {totalLessonsCount} lessons finished</span>
                 {progressData?.is_course_completed && (
-                  <span className="text-emerald-600 font-bold">Graduated</span>
+                  <span className="text-emerald-600 font-bold flex items-center gap-1">
+                    <Award className="w-3.5 h-3.5" /> Certified
+                  </span>
                 )}
               </p>
             </div>
 
-            {/* Modules and Lessons Tree */}
+            {/* Modules, Lessons & Module Quizzes Tree */}
             <div className="overflow-y-auto pt-3 space-y-4 flex-1 pr-1">
               {modules.map((module, mIdx) => {
                 const pm = progressModuleMap.get(module.id);
                 const isLocked = pm ? !pm.is_unlocked : mIdx > 0;
                 const isRelearning = pm?.status === 'NEEDS_RELEARNING';
                 const isCompleted = pm?.status === 'COMPLETED';
+                const modLessons = module.lessons || [];
+                const allModLessonsCompleted =
+                  modLessons.length > 0 &&
+                  modLessons.every((l) => completedLessonIds.has(l.id));
 
                 return (
-                  <div key={module.id} className="space-y-1.5">
-                    <div className="flex items-center justify-between px-2 py-1">
+                  <div key={module.id} className="space-y-2 bg-slate-50/60 p-2.5 rounded-xl border border-slate-200/80">
+                    {/* Module Title & Status */}
+                    <div className="flex items-center justify-between px-1">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[11px] font-bold text-primary">M{mIdx + 1}</span>
                         <span className="text-xs font-bold text-charcoal line-clamp-1">{module.title}</span>
                       </div>
                       {isLocked ? (
-                        <Lock className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                          <Lock className="w-3 h-3" /> Locked
+                        </span>
                       ) : isRelearning ? (
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
-                          Relearning
+                          Relearning (0%)
                         </span>
                       ) : isCompleted ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                      ) : null}
+                        <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-0.5">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Done
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-semibold text-primary">In Progress</span>
+                      )}
                     </div>
 
-                    {/* Lessons */}
-                    <div className="space-y-1 pl-2">
-                      {module.lessons?.map((les) => {
+                    {/* Lessons List */}
+                    <div className="space-y-1 pl-1">
+                      {modLessons.map((les) => {
                         const isLesCompleted = completedLessonIds.has(les.id);
                         const isActive = activeLessonId === les.id;
 
@@ -351,7 +358,7 @@ export const LearningWorkspacePage: React.FC = () => {
                                 ? 'bg-primary text-white font-semibold shadow-sm'
                                 : isLocked
                                 ? 'opacity-50 cursor-not-allowed text-slate-400'
-                                : 'text-charcoal hover:bg-slate-50'
+                                : 'text-charcoal hover:bg-white bg-slate-50'
                             }`}
                           >
                             <div className="flex items-center gap-2 truncate">
@@ -366,60 +373,148 @@ export const LearningWorkspacePage: React.FC = () => {
                               )}
                               <span className="truncate">{les.title}</span>
                             </div>
-                            {les.duration_minutes && (
+                            {les.duration_minutes ? (
                               <span className={`text-[10px] shrink-0 ${isActive ? 'text-indigo-100' : 'text-slate-400'}`}>
                                 {les.duration_minutes}m
                               </span>
-                            )}
+                            ) : null}
                           </button>
                         );
                       })}
-
-                      {/* Relearning Action */}
-                      {isRelearning && (
-                        <button
-                          type="button"
-                          onClick={() => resetRelearningMutation.mutate(module.id)}
-                          disabled={resetRelearningMutation.isPending}
-                          className="flex items-center gap-1.5 w-full p-2 mt-1 rounded-lg text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>Reset Lessons for Relearning</span>
-                        </button>
-                      )}
                     </div>
+
+                    {/* ========================================================================= */}
+                    {/* MODULE QUIZ CHECKPOINT (Required for Module Completion)                   */}
+                    {/* ========================================================================= */}
+                    {pm?.quiz_id && (
+                      <div className="pt-2 border-t border-slate-200/80 px-1">
+                        {isLocked ? (
+                          <div className="p-2 rounded-lg bg-slate-100 text-slate-400 text-[11px] flex items-center justify-between">
+                            <span className="flex items-center gap-1.5 truncate">
+                              <Lock className="w-3.5 h-3.5 shrink-0" />
+                              <span className="truncate">Module {mIdx + 1} Quiz</span>
+                            </span>
+                            <span className="text-[10px]">Locked</span>
+                          </div>
+                        ) : !allModLessonsCompleted && !isCompleted ? (
+                          <div className="p-2 rounded-lg bg-indigo-50/50 border border-indigo-100 text-slate-500 text-[11px] space-y-1">
+                            <div className="flex items-center gap-1.5 font-semibold text-primary">
+                              <Lock className="w-3.5 h-3.5 text-primary shrink-0" />
+                              <span>Module {mIdx + 1} Assessment</span>
+                            </div>
+                            <p className="text-[10px] text-charcoal-muted">
+                              Complete all required module lessons to unlock this quiz.
+                            </p>
+                          </div>
+                        ) : isCompleted ? (
+                          <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <span className="font-bold">Module Assessment Passed</span>
+                            </div>
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
+                              Passed (100%)
+                            </span>
+                          </div>
+                        ) : isRelearning ? (
+                          <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-[11px] space-y-2">
+                            <div className="flex items-start gap-1.5">
+                              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                              <div>
+                                <span className="font-bold block">2 Failed Attempts • Progress Reset</span>
+                                <span className="text-[10px] text-rose-700 leading-tight block mt-0.5">
+                                  You did not pass after 2 attempts. Review the module lessons and restart.
+                                </span>
+                              </div>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full bg-white text-rose-700 border-rose-300 hover:bg-rose-100"
+                              isLoading={resetRelearningMutation.isPending}
+                              onClick={() => resetRelearningMutation.mutate(module.id)}
+                              leftIcon={<RotateCcw className="w-3 h-3" />}
+                            >
+                              Reset Lessons & Start New Cycle
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="p-2.5 rounded-lg bg-indigo-50 border border-indigo-200 text-primary text-[11px] space-y-1.5">
+                            <div className="flex items-center justify-between font-bold">
+                              <span className="flex items-center gap-1">
+                                <Sparkles className="w-3.5 h-3.5 text-primary" />
+                                <span>Module {mIdx + 1} Quiz Ready</span>
+                              </span>
+                              <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                                {pm.quiz_attempts_remaining} Attempt{pm.quiz_attempts_remaining !== 1 ? 's' : ''} Left
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-charcoal-muted">
+                              <span>Passing: {pm.quiz_passing_score || 70}%</span>
+                              <span>Max Attempts: 2</span>
+                            </div>
+                            <Link to={`/learner/quiz/${pm.quiz_id}`} className="block mt-1">
+                              <Button size="sm" className="w-full" rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
+                                {pm.attempts_used > 0 ? 'Retry Module Quiz' : 'Start Module Quiz'}
+                              </Button>
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
 
-              {/* Final Exam Section */}
-              <div className="pt-3 border-t border-border/80 px-2 space-y-1">
+              {/* ========================================================================= */}
+              {/* FINAL COURSE ASSESSMENT SECTION                                           */}
+              {/* ========================================================================= */}
+              <div className="pt-3 border-t border-border/80 px-2 space-y-2">
                 <div className="flex items-center justify-between text-xs font-bold text-charcoal">
                   <span className="flex items-center gap-1.5">
                     <Award className="w-4 h-4 text-amber-500" />
-                    <span>Final Certification</span>
+                    <span>Final Course Assessment</span>
                   </span>
                   {progressData?.is_final_exam_unlocked ? (
-                    <span className="text-[10px] text-emerald-600 font-semibold">Unlocked</span>
+                    <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                      Unlocked
+                    </span>
                   ) : (
-                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> Locked
+                    </span>
                   )}
                 </div>
-                <p className="text-[11px] text-charcoal-muted">
-                  Complete all modules to unlock the final certification exam.
+
+                <p className="text-[11px] text-charcoal-muted leading-relaxed">
+                  {progressData?.is_final_exam_unlocked
+                    ? 'All modules completed! Pass the final assessment to earn your official certificate.'
+                    : 'Complete all required modules and pass every module quiz to unlock the final certification exam.'}
                 </p>
+
+                {progressData?.is_final_exam_unlocked && progressData?.final_exam_quiz_id && (
+                  <Link to={`/learner/quiz/${progressData.final_exam_quiz_id}`} className="block pt-1">
+                    <Button
+                      size="sm"
+                      className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-sm"
+                      rightIcon={<Award className="w-4 h-4" />}
+                    >
+                      {progressData.is_course_completed ? 'Review Final Exam' : 'Take Final Certification Exam'}
+                    </Button>
+                  </Link>
+                )}
               </div>
             </div>
           </div>
         </div>
 
         {/* ========================================================================= */}
-        {/* COLUMN 2: Main Lesson Workspace                                           */}
+        {/* COLUMN 2: Main Lesson Workspace (In-Platform Video & Documents)            */}
         {/* ========================================================================= */}
         <div
           className={`${
-            showDesktopNotes ? 'lg:col-span-6' : 'lg:col-span-9'
-          } ${mobileActiveTab === 'notes' ? 'hidden lg:block' : 'block'} bg-white rounded-2xl border border-border shadow-card p-6 sm:p-8 flex flex-col min-h-[620px] justify-between space-y-6`}
+            showDesktopNotes ? 'lg:col-span-5' : 'lg:col-span-8'
+          } ${mobileActiveTab === 'notes' ? 'hidden lg:block' : 'block'} bg-white rounded-2xl border border-border shadow-card p-6 sm:p-8 flex flex-col min-h-[660px] justify-between space-y-6`}
         >
           {loadingLesson ? (
             <LoadingState message="Loading lesson materials..." className="my-auto" />
@@ -445,7 +540,6 @@ export const LearningWorkspacePage: React.FC = () => {
                         Completed
                       </span>
                     )}
-                    {/* Toggle Desktop Notes Panel */}
                     <button
                       type="button"
                       onClick={() => setShowDesktopNotes(!showDesktopNotes)}
@@ -471,41 +565,83 @@ export const LearningWorkspacePage: React.FC = () => {
                 </h2>
               </div>
 
-              {/* Video Player if video_url is present */}
-              {activeLesson.video_url && (
-                <div className="bg-slate-900 rounded-xl p-5 text-white flex flex-col items-center justify-center min-h-[220px]">
-                  <Video className="w-10 h-10 text-primary-light mb-2" />
-                  <p className="text-sm font-semibold">Video Lecture Resource</p>
-                  <a
-                    href={activeLesson.video_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 text-xs text-primary-light hover:underline flex items-center gap-1"
-                  >
-                    Open Lecture Stream <ArrowRight className="w-3.5 h-3.5" />
-                  </a>
-                </div>
-              )}
-
-              {/* Document Link */}
-              {activeLesson.document_url && (
-                <div className="p-4 bg-indigo-50/60 rounded-xl border border-indigo-100 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs text-primary font-medium">
-                    <FileText className="w-4 h-4" />
-                    <span>Supplementary Study Materials</span>
+              {/* =================================================================== */}
+              {/* IN-PLATFORM VIDEO PLAYER (No YouTube or external redirects)         */}
+              {/* =================================================================== */}
+              {activeLesson.video_url ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-charcoal">
+                    <Video className="w-4 h-4 text-primary" />
+                    <span>Lecture Video</span>
                   </div>
-                  <a
-                    href={activeLesson.document_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-bold text-primary hover:underline"
-                  >
-                    Open Document
-                  </a>
+                  <div className="rounded-2xl overflow-hidden border border-slate-800 bg-black shadow-lg">
+                    <video
+                      key={activeLesson.video_url}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="w-full max-h-[380px] bg-black"
+                      src={activeLesson.video_url}
+                      onError={(e) => {
+                        console.warn("Video playback error on src:", activeLesson.video_url, e);
+                      }}
+                    >
+                      <source src={activeLesson.video_url} type="video/mp4" />
+                      Your browser does not support the HTML5 video tag.
+                    </video>
+                  </div>
                 </div>
-              )}
+              ) : null}
 
-              {/* Content Body */}
+              {/* =================================================================== */}
+              {/* IN-PLATFORM LEARNING MATERIALS (Automatic Embedded PDF & Documents) */}
+              {/* =================================================================== */}
+              {activeLesson.document_url ? (
+                <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-200 space-y-3">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-emerald-200/70">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 bg-emerald-100 text-emerald-700 rounded-lg flex items-center justify-center shrink-0">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-charcoal block">
+                          Supplementary Study Material
+                        </span>
+                        <span className="text-[11px] text-charcoal-muted truncate max-w-xs block font-mono">
+                          {activeLesson.document_url.split('/').pop() || 'Study Material Document'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <a
+                        href={activeLesson.document_url}
+                        download
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-sm"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download Document</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Automatic Embedded PDF Viewer */}
+                  {activeLesson.document_url.toLowerCase().endsWith('.pdf') ? (
+                    <div className="rounded-xl overflow-hidden border border-emerald-200 bg-white shadow-inner">
+                      <iframe
+                        key={activeLesson.document_url}
+                        src={`${activeLesson.document_url}#toolbar=0&navpanes=0`}
+                        title="Embedded Supplementary Study Material"
+                        className="w-full h-[520px] rounded-xl"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {/* Lesson Body / Notes Content */}
               <div className="prose max-w-none text-sm sm:text-base text-charcoal leading-relaxed space-y-4 flex-1">
                 {activeLesson.content_body ? (
                   <div className="whitespace-pre-wrap font-sans">{activeLesson.content_body}</div>
@@ -518,8 +654,8 @@ export const LearningWorkspacePage: React.FC = () => {
               <div className="pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-xs text-charcoal-muted">
                   {isCurrentLessonCompleted
-                    ? '✓ Progress saved. You can revisit this lesson anytime.'
-                    : 'Click below once you have reviewed the lesson materials.'}
+                    ? '✓ Lesson completed. You can review anytime.'
+                    : 'Review the lecture materials and mark complete to progress.'}
                 </div>
 
                 <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -545,7 +681,7 @@ export const LearningWorkspacePage: React.FC = () => {
           <div
             className={`lg:col-span-3 ${
               mobileActiveTab === 'notes' ? 'block' : 'hidden lg:block'
-            } bg-white rounded-2xl border border-border shadow-card p-5 flex flex-col h-full min-h-[620px] justify-between space-y-4`}
+            } bg-white rounded-2xl border border-border shadow-card p-5 flex flex-col h-full min-h-[660px] justify-between space-y-4`}
           >
             {/* Notes Header */}
             <div className="pb-3 border-b border-border/80 space-y-2">
@@ -557,7 +693,7 @@ export const LearningWorkspacePage: React.FC = () => {
                   <h3 className="text-sm font-bold text-charcoal">Lesson Notes</h3>
                 </div>
                 <div className="flex items-center gap-1">
-                  {noteContent && (
+                  {noteContent ? (
                     <>
                       <button
                         type="button"
@@ -576,7 +712,7 @@ export const LearningWorkspacePage: React.FC = () => {
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </>
-                  )}
+                  ) : null}
                 </div>
               </div>
               <p className="text-[11px] font-semibold text-charcoal-muted truncate">
@@ -595,7 +731,7 @@ export const LearningWorkspacePage: React.FC = () => {
                     ? 'Write your study notes, key takeaways, and code snippets here...'
                     : 'Select a lesson to take notes.'
                 }
-                className="w-full flex-1 min-h-[360px] p-3 text-xs leading-relaxed text-charcoal bg-slate-50/70 rounded-xl border border-border focus:border-primary focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none font-sans"
+                className="w-full flex-1 min-h-[380px] p-3 text-xs leading-relaxed text-charcoal bg-slate-50/70 rounded-xl border border-border focus:border-primary focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary resize-none font-sans"
               />
 
               <div className="flex items-center justify-between text-[10px] text-charcoal-muted px-1">
@@ -604,19 +740,52 @@ export const LearningWorkspacePage: React.FC = () => {
               </div>
             </div>
 
-            {/* Offline/Local Storage Notice */}
+            {/* Notice */}
             <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1 text-[11px] text-charcoal-muted">
               <div className="flex items-center gap-1.5 text-slate-600 font-semibold">
                 <Info className="w-3.5 h-3.5 shrink-0 text-primary" />
                 <span>Local Device Storage</span>
               </div>
               <p className="text-[10px] leading-normal text-slate-500">
-                Notes saved locally on this device. Cloud synchronization is not currently available.
+                Notes are persisted locally on your device for quick offline revision.
               </p>
             </div>
           </div>
         )}
       </div>
+
+      {/* PDF In-Platform Preview Modal */}
+      {pdfPreviewUrl && (
+        <Modal
+          isOpen={Boolean(pdfPreviewUrl)}
+          onClose={() => setPdfPreviewUrl(null)}
+          size="lg"
+          title="Document Viewer (PDF)"
+        >
+          <div className="space-y-4">
+            <div className="w-full h-[65vh] rounded-xl overflow-hidden border border-border bg-slate-100">
+              <iframe
+                src={pdfPreviewUrl}
+                title="PDF Document Preview"
+                className="w-full h-full border-none"
+              />
+            </div>
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-xs text-charcoal-muted truncate max-w-sm font-mono">
+                {pdfPreviewUrl}
+              </span>
+              <a
+                href={pdfPreviewUrl}
+                download
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download PDF</span>
+              </a>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

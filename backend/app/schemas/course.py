@@ -1,7 +1,8 @@
 import uuid
-from typing import Optional, List
+from typing import Optional, List, Any
 from datetime import datetime
-from pydantic import Field, model_validator
+from decimal import Decimal
+from pydantic import Field, model_validator, field_validator
 from app.schemas.common import CoreBaseModel
 from app.schemas.user import UserResponse
 from app.schemas.taxonomy import SubDomainResponse
@@ -76,8 +77,31 @@ class ModuleResponse(CoreBaseModel):
     created_at: datetime
 
 
+class QuizSummaryResponse(CoreBaseModel):
+    id: uuid.UUID
+    title: str
+    description: Optional[str] = None
+    quiz_type: str
+    passing_score: Decimal
+    max_attempts: int
+    questions_count: int = 0
+
+
 class ModuleDetailResponse(ModuleResponse):
     lessons: List[LessonResponse] = []
+    quiz: Optional[QuizSummaryResponse] = None
+
+
+def _normalize_string_list(val: Any) -> Optional[List[str]]:
+    if val is None:
+        return None
+    if isinstance(val, str):
+        lines = [line.strip() for line in val.split("\n") if line.strip()]
+        return lines if lines else None
+    if isinstance(val, list):
+        cleaned = [str(item).strip() for item in val if str(item).strip()]
+        return cleaned if cleaned else None
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +114,14 @@ class CourseBase(CoreBaseModel):
     thumbnail_url: Optional[str] = None
     difficulty_level: Optional[DifficultyLevel] = None
     is_published: bool = False
+    prerequisites: Optional[List[str]] = Field(default=None, description="List of knowledge or skills required before starting")
+    learning_outcomes: Optional[List[str]] = Field(default=None, description="Structured list of learning outcomes upon completion")
+    has_certificate: bool = Field(default=True, description="Whether this course offers a certificate upon completion")
+
+    @field_validator("prerequisites", "learning_outcomes", mode="before")
+    @classmethod
+    def sanitize_metadata_lists(cls, v: Any) -> Optional[List[str]]:
+        return _normalize_string_list(v)
 
 
 class CourseCreate(CourseBase):
@@ -105,6 +137,14 @@ class CourseUpdate(CoreBaseModel):
     difficulty_level: Optional[DifficultyLevel] = None
     sub_domain_id: Optional[uuid.UUID] = None
     is_published: Optional[bool] = None
+    prerequisites: Optional[List[str]] = None
+    learning_outcomes: Optional[List[str]] = None
+    has_certificate: Optional[bool] = None
+
+    @field_validator("prerequisites", "learning_outcomes", mode="before")
+    @classmethod
+    def sanitize_update_metadata_lists(cls, v: Any) -> Optional[List[str]]:
+        return _normalize_string_list(v)
 
 
 class CourseResponse(CourseBase):
@@ -119,6 +159,7 @@ class CourseDetailResponse(CourseResponse):
     instructor: Optional[UserResponse] = None
     sub_domain: Optional[SubDomainResponse] = None
     modules: List[ModuleDetailResponse] = []
+    final_quiz: Optional[QuizSummaryResponse] = None
 
 
 # ---------------------------------------------------------------------------

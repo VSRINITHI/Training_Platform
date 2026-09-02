@@ -33,6 +33,54 @@ def _generate_certificate_number(db: Session) -> str:
     return f"DC-{year}-{uuid.uuid4().hex[:8].upper()}"
 
 
+def clean_learner_name(full_name: Optional[str]) -> str:
+    """
+    Cleans student registration/roll numbers merged into user full names.
+    E.g. '727822TUAD054 SRINITHI.V' -> 'SRINITHI.V'
+    """
+    if not full_name:
+        return "Learner"
+    trimmed = full_name.strip()
+    parts = trimmed.split()
+    if len(parts) > 1 and any(c.isdigit() for c in parts[0]) and any(c.isalpha() for c in parts[0]):
+        return " ".join(parts[1:])
+    return trimmed
+
+
+def _build_certificate_response(cert: Certificate, db: Session) -> CertificateResponse:
+    """
+    Constructs a CertificateResponse with full course and learner snapshot data
+    derived authoritatively from the certificate record.
+    """
+    student = db.query(User).filter(User.id == cert.user_id).first()
+    course = db.query(Course).filter(Course.id == cert.course_id).first()
+    instructor = (
+        db.query(User).filter(User.id == course.instructor_id).first()
+        if (course and course.instructor_id)
+        else None
+    )
+
+    student_name = clean_learner_name(student.full_name) if student else "Learner"
+    course_title = course.title if course else "Course"
+    course_slug = course.slug if course else None
+    instructor_name = clean_learner_name(instructor.full_name) if instructor else "Course Faculty"
+
+    return CertificateResponse(
+        id=cert.id,
+        enrollment_id=cert.enrollment_id,
+        user_id=cert.user_id,
+        course_id=cert.course_id,
+        certificate_number=cert.certificate_number,
+        issued_at=cert.issued_at,
+        pdf_storage_path=cert.pdf_storage_path,
+        verification_hash=cert.verification_hash,
+        student_name=student_name,
+        course_title=course_title,
+        course_slug=course_slug,
+        instructor_name=instructor_name,
+    )
+
+
 @router.post(
     "/courses/{course_id}/certificate",
     response_model=CertificateResponse,
@@ -52,6 +100,12 @@ def claim_certificate(
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
+    if not getattr(course, "has_certificate", True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This course does not offer a certificate of completion",
+        )
+
     enrollment = (
         db.query(Enrollment)
         .filter(Enrollment.user_id == current_user.id, Enrollment.course_id == course_id)
@@ -66,7 +120,7 @@ def claim_certificate(
     # If certificate already issued, return existing certificate (idempotent)
     existing_cert = db.query(Certificate).filter(Certificate.enrollment_id == enrollment.id).first()
     if existing_cert:
-        return existing_cert
+        return _build_certificate_response(existing_cert, db)
 
     # 1. Verify all required modules are COMPLETED
     required_modules = (
@@ -135,7 +189,7 @@ def claim_certificate(
     db.commit()
     db.refresh(certificate)
 
-    return certificate
+    return _build_certificate_response(certificate, db)
 
 
 @router.get(
@@ -144,12 +198,18 @@ def claim_certificate(
     status_code=status.HTTP_200_OK,
     summary="List all certificates earned by current user",
 )
+@router.get(
+    "/certificates",
+    response_model=List[CertificateResponse],
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
 def get_my_certificates(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> List[CertificateResponse]:
     """
-    Returns list of certificates earned by the authenticated user.
+    Returns list of certificates earned by the authenticated user with authoritative course metadata.
     """
     certificates = (
         db.query(Certificate)
@@ -157,7 +217,7 @@ def get_my_certificates(
         .order_by(Certificate.issued_at.desc())
         .all()
     )
-    return certificates
+    return [_build_certificate_response(c, db) for c in certificates]
 
 
 @router.get(
@@ -181,7 +241,7 @@ def get_certificate(
     if current_user.role not in (UserRole.ADMIN, UserRole.INSTRUCTOR) and cert.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You do not have permission to view this certificate")
 
-    return cert
+    return _build_certificate_response(cert, db)
 
 
 @router.get(
@@ -196,7 +256,8 @@ def verify_certificate(
 ) -> CertificateVerifyResponse:
     """
     Public verification endpoint (unauthenticated).
-    Searches by certificate number or SHA-256 verification hash and confirms authenticity.
+    Searches by certificate number or SHA-256 verification hash and confirms authenticity
+    strictly using the certificate record's authoritative course and user associations.
     """
     identifier = certificate_number_or_hash.strip()
     cert = (
@@ -216,12 +277,22 @@ def verify_certificate(
 
     student = db.query(User).filter(User.id == cert.user_id).first()
     course = db.query(Course).filter(Course.id == cert.course_id).first()
+    instructor = (
+        db.query(User).filter(User.id == course.instructor_id).first()
+        if (course and course.instructor_id)
+        else None
+    )
+
+    student_name = clean_learner_name(student.full_name) if student else "Learner"
+    course_title = course.title if course else "Course"
+    instructor_name = clean_learner_name(instructor.full_name) if instructor else "Course Faculty"
 
     return CertificateVerifyResponse(
         is_valid=True,
         certificate_number=cert.certificate_number,
-        student_name=student.full_name if student else "Learner",
-        course_title=course.title if course else "Course",
+        student_name=student_name,
+        course_title=course_title,
         issued_at=cert.issued_at,
         verification_hash=cert.verification_hash,
+        instructor_name=instructor_name,
     )

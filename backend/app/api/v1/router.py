@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     progress,
     certificates,
     invitations,
+    uploads,
 )
 
 api_router = APIRouter()
@@ -31,4 +32,5 @@ api_router.include_router(quizzes.router)
 api_router.include_router(enrollments.router)
 api_router.include_router(progress.router)
 api_router.include_router(certificates.router)
+api_router.include_router(uploads.router)
 

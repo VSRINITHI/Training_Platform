@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from typing import List, Optional, Any
 from datetime import datetime
 from decimal import Decimal
@@ -70,6 +70,10 @@ class CertificateResponse(CoreBaseModel):
     issued_at: datetime
     pdf_storage_path: Optional[str] = None
     verification_hash: str
+    student_name: Optional[str] = None
+    course_title: Optional[str] = None
+    course_slug: Optional[str] = None
+    instructor_name: Optional[str] = None
 
 
 class CertificateVerifyResponse(CoreBaseModel):
@@ -79,3 +83,4 @@ class CertificateVerifyResponse(CoreBaseModel):
     course_title: Optional[str] = None
     issued_at: Optional[datetime] = None
     verification_hash: str
+    instructor_name: Optional[str] = None

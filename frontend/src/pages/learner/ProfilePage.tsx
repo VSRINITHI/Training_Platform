@@ -135,7 +135,12 @@ export const ProfilePage: React.FC = () => {
           <h3 className="text-base font-bold text-charcoal">Personal Information</h3>
 
           <form onSubmit={handleSubmit(onProfileSubmit)} className="space-y-4">
-            <Input label="Full Name" placeholder="Alex Johnson" {...register('full_name')} />
+            <Input
+              label="Full Name"
+              placeholder="Alex Johnson"
+              helperText="This authoritative name will appear on all your verified completion certificates."
+              {...register('full_name')}
+            />
 
             <Input
               label="Email Address"

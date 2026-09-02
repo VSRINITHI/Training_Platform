@@ -274,9 +274,12 @@ def test_quiz_submission_and_scoring_engine(client: TestClient, assessment_setup
         )
         assert res.status_code == status.HTTP_403_FORBIDDEN
 
-        # 2. Enroll learner
+        # 2. Enroll learner and complete required module lessons
         enroll_res = client.post("/api/v1/enrollments", json={"course_id": str(course_id)})
         assert enroll_res.status_code == status.HTTP_201_CREATED
+
+        client.post(f"/api/v1/lessons/{setup['lesson1_id']}/progress", json={"is_completed": True})
+        client.post(f"/api/v1/lessons/{setup['lesson2_id']}/progress", json={"is_completed": True})
 
         # 3. Submit quiz with all correct answers (100%)
         # Q1: 4 (1pt), Q2: True (1pt), Q3: List + Dictionary (2pts) -> Total 4/4 = 100%
@@ -333,8 +336,10 @@ def test_relearning_lifecycle_and_cycle_tracking(client: TestClient, assessment_
 
     app.dependency_overrides[get_current_user] = lambda: user
     try:
-        # Enroll user
+        # Enroll user and complete lessons
         client.post("/api/v1/enrollments", json={"course_id": str(course_id)})
+        client.post(f"/api/v1/lessons/{setup['lesson1_id']}/progress", json={"is_completed": True})
+        client.post(f"/api/v1/lessons/{setup['lesson2_id']}/progress", json={"is_completed": True})
 
         # Prepare failing answers (0% score)
         wrong_submission = {
@@ -353,33 +358,29 @@ def test_relearning_lifecycle_and_cycle_tracking(client: TestClient, assessment_
         assert r1.json()["is_passed"] is False
         assert r1.json()["relearning_triggered"] is False
 
-        # Attempt 2: Fail (attempts_used -> 2)
+        # Attempt 2: Fail (attempts_used -> 2 == max_attempts for module quiz -> triggers NEEDS_RELEARNING)
         r2 = client.post(f"/api/v1/quizzes/{quiz_id}/submit", json=wrong_submission)
         assert r2.status_code == status.HTTP_200_OK
         assert r2.json()["attempt_number"] == 2
         assert r2.json()["attempt_cycle"] == 1
         assert r2.json()["is_passed"] is False
-        assert r2.json()["relearning_triggered"] is False
+        assert r2.json()["relearning_triggered"] is True
 
-        # Attempt 3: Fail (attempts_used -> 3 == max_attempts -> triggers NEEDS_RELEARNING)
+        # Attempt 3 without reset should be blocked with 400
         r3 = client.post(f"/api/v1/quizzes/{quiz_id}/submit", json=wrong_submission)
-        assert r3.status_code == status.HTTP_200_OK
-        assert r3.json()["attempt_number"] == 3
-        assert r3.json()["attempt_cycle"] == 1
-        assert r3.json()["is_passed"] is False
-        assert r3.json()["relearning_triggered"] is True
-
-        # Attempt 4 without reset should be blocked with 400
-        r4 = client.post(f"/api/v1/quizzes/{quiz_id}/submit", json=wrong_submission)
-        assert r4.status_code == status.HTTP_400_BAD_REQUEST
-        assert "NEEDS_RELEARNING" in r4.json()["detail"]
+        assert r3.status_code == status.HTTP_400_BAD_REQUEST
+        assert "relearning" in r3.json()["detail"].lower()
 
         # Reset module for relearning
         reset_res = client.post(f"/api/v1/modules/{module1_id}/relearning/reset")
         assert reset_res.status_code == status.HTTP_200_OK
         assert "reset to in-progress" in reset_res.json()["message"]
 
-        # Attempt 4 after reset: Cycle increments to 2, attempt_number is 4!
+        # Re-complete lessons in Cycle 2
+        client.post(f"/api/v1/lessons/{setup['lesson1_id']}/progress", json={"is_completed": True})
+        client.post(f"/api/v1/lessons/{setup['lesson2_id']}/progress", json={"is_completed": True})
+
+        # Attempt in Cycle 2: Cycle increments to 2, attempt_number is 3!
         # Now submit passing answers (Q1: 4 (1pt), Q2: True (1pt), Q3: List + Dict (2pts) -> 4/4 = 100%)
         pass_submission = {
             "answers": [
@@ -391,7 +392,7 @@ def test_relearning_lifecycle_and_cycle_tracking(client: TestClient, assessment_
         r_cycle2 = client.post(f"/api/v1/quizzes/{quiz_id}/submit", json=pass_submission)
         assert r_cycle2.status_code == status.HTTP_200_OK
         data_c2 = r_cycle2.json()
-        assert data_c2["attempt_number"] == 4
+        assert data_c2["attempt_number"] == 3
         assert data_c2["attempt_cycle"] == 2
         assert data_c2["is_passed"] is True
 

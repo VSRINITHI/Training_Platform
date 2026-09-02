@@ -111,29 +111,21 @@ export const QuizManagementPage: React.FC = () => {
       />
 
       {/* Overview Cards by Type */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white p-5 rounded-xl border border-border shadow-card">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-charcoal-muted">Module Assessments</span>
+            <span className="text-xs font-semibold text-charcoal-muted">Module Assessment Checkpoints</span>
             <Award className="w-4 h-4 text-primary" />
           </div>
-          <p className="text-sm text-charcoal-muted mt-2">Required for module unlock & progress</p>
+          <p className="text-sm text-charcoal-muted mt-2">Required for sequential module unlock & competency certification</p>
         </div>
 
         <div className="bg-white p-5 rounded-xl border border-border shadow-card">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-charcoal-muted">Lesson Quizzes</span>
-            <HelpCircle className="w-4 h-4 text-indigo-500" />
-          </div>
-          <p className="text-sm text-charcoal-muted mt-2">Quick self-check assessments</p>
-        </div>
-
-        <div className="bg-white p-5 rounded-xl border border-border shadow-card">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-charcoal-muted">Final Exam</span>
+            <span className="text-xs font-semibold text-charcoal-muted">Course Final Certification Exam</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           </div>
-          <p className="text-sm text-charcoal-muted mt-2">Unlocks certificate issuance</p>
+          <p className="text-sm text-charcoal-muted mt-2">Comprehensive exam required for verified certificate issuance</p>
         </div>
       </div>
 
@@ -273,8 +265,7 @@ export const QuizManagementPage: React.FC = () => {
             value={quizType}
             onChange={(e) => setQuizType(e.target.value as QuizType)}
           >
-            <option value="MODULE">Module Assessment</option>
-            <option value="LESSON">Lesson Quiz</option>
+            <option value="MODULE">Module Assessment Checkpoint</option>
             <option value="FINAL">Course Final Certification Exam</option>
           </Select>
 

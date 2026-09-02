@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # Frontend URL — used to construct redirect URLs in invitation emails
     FRONTEND_URL: str = "http://localhost:5173"
 
+    # NVIDIA AI Configuration (OpenAI-compatible inference API)
+    NVIDIA_API_KEY: Optional[str] = None
+    NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
+    NVIDIA_MODEL: str = "meta/llama-3.2-11b-vision-instruct"
+    NVIDIA_TIMEOUT_SECONDS: float = 90.0
+    NVIDIA_MAX_RETRIES: int = 2
+
     # Application Email Sender Configuration (Set ONCE in backend environment)
     EMAIL_FROM_ADDRESS: str = "srinithi@gmail.com"
     EMAIL_FROM_NAME: str = "DataCaliper Training Platform"

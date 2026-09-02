@@ -244,6 +244,18 @@ def get_course_progress(
         total_lessons = len(mod.lessons)
         completed_lessons = sum(1 for lp in lesson_records if lp.is_completed)
 
+        # Look up active module quiz
+        module_quiz = (
+            db.query(Quiz)
+            .filter(Quiz.module_id == mod.id, Quiz.quiz_type == QuizType.MODULE, Quiz.is_active == True)
+            .first()
+        )
+        quiz_id = module_quiz.id if module_quiz else None
+        quiz_title = module_quiz.title if module_quiz else None
+        quiz_passing_score = module_quiz.passing_score if module_quiz else None
+        quiz_attempts_remaining = max(0, 2 - attempts_used)
+        is_quiz_passed = (status_val == ModuleProgressStatus.COMPLETED)
+
         if mod.is_required and status_val == ModuleProgressStatus.COMPLETED:
             completed_required_count += 1
 
@@ -262,6 +274,11 @@ def get_course_progress(
             relearning_triggered_at=relearning_triggered_at,
             total_lessons_count=total_lessons,
             completed_lessons_count=completed_lessons,
+            quiz_id=quiz_id,
+            quiz_title=quiz_title,
+            quiz_passing_score=quiz_passing_score,
+            quiz_attempts_remaining=quiz_attempts_remaining,
+            is_quiz_passed=is_quiz_passed,
             lesson_progress_records=[
                 LessonProgressResponse(
                     id=lp.id,
@@ -275,17 +292,33 @@ def get_course_progress(
         )
         module_details.append(detail)
 
-    # Calculate overall progress percentage
+    # Calculate overall progress percentage based on completed lessons
     total_req = len(required_modules)
-    progress_pct = (
-        (Decimal(completed_required_count) / Decimal(total_req) * Decimal("100.00")).quantize(Decimal("0.01"))
-        if total_req > 0
-        else Decimal("0.00")
+    total_lessons_in_course = sum(len(m.lessons) for m in all_modules)
+    total_completed_lessons_in_course = sum(
+        d.completed_lessons_count for d in module_details
     )
 
-    # Final exam unlock rule: ALL required modules must be completed
+    if enrollment.status == EnrollmentStatus.COMPLETED:
+        progress_pct = Decimal("100.00")
+    elif total_lessons_in_course > 0:
+        progress_pct = (
+            (Decimal(total_completed_lessons_in_course) / Decimal(total_lessons_in_course) * Decimal("100.00")).quantize(Decimal("0.01"))
+        )
+    else:
+        progress_pct = Decimal("0.00")
+
+    # Final exam unlock rule: ALL required modules must be completed (lessons finished + checkpoint quiz passed)
     is_final_unlocked = (completed_required_count == total_req and total_req > 0)
     is_course_completed = (enrollment.status == EnrollmentStatus.COMPLETED)
+
+    # Look up active course final exam
+    final_quiz = (
+        db.query(Quiz)
+        .filter(Quiz.course_id == course_id, Quiz.quiz_type == QuizType.FINAL, Quiz.is_active == True)
+        .first()
+    )
+    final_exam_quiz_id = final_quiz.id if final_quiz else None
 
     return CourseProgressResponse(
         enrollment_id=enrollment.id,
@@ -296,6 +329,7 @@ def get_course_progress(
         progress_pct=progress_pct,
         is_final_exam_unlocked=is_final_unlocked,
         is_course_completed=is_course_completed,
+        final_exam_quiz_id=final_exam_quiz_id,
         modules=module_details,
     )
 

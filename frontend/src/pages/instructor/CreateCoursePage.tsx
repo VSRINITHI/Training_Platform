@@ -4,17 +4,15 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { PlusCircle, ArrowLeft, BookOpen, Sparkles } from 'lucide-react';
+import { PlusCircle, ArrowLeft, Award } from 'lucide-react';
 import { coursesApi } from '../../api/courses';
 import { subDomainsApi } from '../../api/subDomains';
-import { domainsApi } from '../../api/domains';
 import { useToast } from '../../context/ToastContext';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Input } from '../../components/ui/Input';
 import { Textarea } from '../../components/ui/Textarea';
 import { Select } from '../../components/ui/Select';
 import { Button } from '../../components/ui/Button';
-import { DifficultyLevel } from '../../types';
 
 const courseSchema = z.object({
   title: z.string().min(3, 'Course title must be at least 3 characters'),
@@ -22,15 +20,18 @@ const courseSchema = z.object({
   description: z.string().min(10, 'Description must be at least 10 characters'),
   sub_domain_id: z.string().uuid('Please select a valid sub-domain/topic'),
   difficulty_level: z.enum(['BEGINNER', 'INTERMEDIATE', 'ADVANCED'] as const),
+  prerequisites: z.string().optional(),
+  learning_outcomes: z.string().optional(),
+  has_certificate: z.enum(['true', 'false']),
 });
 
-type CourseFormData = z.infer<typeof courseSchema>;
+type CourseFormInput = z.infer<typeof courseSchema>;
 
 export const CreateCoursePage: React.FC = () => {
   const navigate = useNavigate();
   const { success, error: toastError } = useToast();
 
-  const { data: subDomains = [], isLoading: loadingSubDomains } = useQuery({
+  const { data: subDomains = [] } = useQuery({
     queryKey: ['create-course-subdomains'],
     queryFn: () => subDomainsApi.list(),
   });
@@ -39,16 +40,16 @@ export const CreateCoursePage: React.FC = () => {
     register,
     handleSubmit,
     setValue,
-    watch,
     formState: { errors },
-  } = useForm<CourseFormData>({
+  } = useForm<CourseFormInput>({
     resolver: zodResolver(courseSchema),
     defaultValues: {
       difficulty_level: 'BEGINNER',
+      has_certificate: 'true',
+      prerequisites: '',
+      learning_outcomes: '',
     },
   });
-
-  const titleValue = watch('title');
 
   // Auto-generate slug from title
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -62,7 +63,25 @@ export const CreateCoursePage: React.FC = () => {
   };
 
   const createMutation = useMutation({
-    mutationFn: (data: CourseFormData) => coursesApi.create(data),
+    mutationFn: (data: CourseFormInput) => {
+      const prerequisitesList = data.prerequisites
+        ? data.prerequisites.split('\n').map((s) => s.trim()).filter(Boolean)
+        : [];
+      const learningOutcomesList = data.learning_outcomes
+        ? data.learning_outcomes.split('\n').map((s) => s.trim()).filter(Boolean)
+        : [];
+
+      return coursesApi.create({
+        title: data.title,
+        slug: data.slug,
+        description: data.description,
+        sub_domain_id: data.sub_domain_id,
+        difficulty_level: data.difficulty_level,
+        prerequisites: prerequisitesList.length > 0 ? prerequisitesList : null,
+        learning_outcomes: learningOutcomesList.length > 0 ? learningOutcomesList : null,
+        has_certificate: data.has_certificate === 'true',
+      });
+    },
     onSuccess: (newCourse) => {
       success('Course Created', 'Course details saved. Now you can build its curriculum.');
       navigate(`/instructor/courses/${newCourse.id}/curriculum`);
@@ -72,7 +91,7 @@ export const CreateCoursePage: React.FC = () => {
     },
   });
 
-  const onSubmit = (data: CourseFormData) => {
+  const onSubmit = (data: CourseFormInput) => {
     createMutation.mutate(data);
   };
 
@@ -87,61 +106,114 @@ export const CreateCoursePage: React.FC = () => {
 
       <PageHeader
         title="Create New Course"
-        description="Define course metadata, target topic, difficulty, and URL slug."
+        description="Define course metadata, learning objectives, prerequisites, and certification settings."
       />
 
       <div className="bg-white p-6 sm:p-8 rounded-2xl border border-border shadow-card">
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-          <Input
-            label="Course Title"
-            placeholder="e.g. Advanced Machine Learning Engineering"
-            error={errors.title?.message}
-            {...register('title')}
-            onChange={handleTitleChange}
-          />
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          {/* Basic Info */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-charcoal-muted">
+              Course Details
+            </h3>
 
-          <Input
-            label="URL Slug"
-            placeholder="e.g. advanced-machine-learning"
-            error={errors.slug?.message}
-            helperText="Unique identifier for the course URL."
-            {...register('slug')}
-          />
+            <Input
+              label="Course Title"
+              placeholder="e.g. Python Programming Fundamentals"
+              error={errors.title?.message}
+              {...register('title')}
+              onChange={handleTitleChange}
+            />
 
-          <Textarea
-            label="Course Description"
-            placeholder="Provide a comprehensive summary of what learners will master in this track..."
-            rows={4}
-            error={errors.description?.message}
-            {...register('description')}
-          />
+            <Input
+              label="URL Slug"
+              placeholder="e.g. python-programming-fundamentals"
+              error={errors.slug?.message}
+              helperText="Unique identifier for the course URL."
+              {...register('slug')}
+            />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Select
-              label="Subject Sub-Domain / Topic"
-              error={errors.sub_domain_id?.message}
-              placeholder="Select technical topic"
-              {...register('sub_domain_id')}
-            >
-              <option value="" disabled>
-                Select technical topic
-              </option>
-              {subDomains.map((sd) => (
-                <option key={sd.id} value={sd.id}>
-                  {sd.name} {sd.domain ? `(${sd.domain.name})` : ''}
+            <Textarea
+              label="Course Description"
+              placeholder="Provide a comprehensive summary of what learners will master in this track..."
+              rows={4}
+              error={errors.description?.message}
+              {...register('description')}
+            />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Select
+                label="Subject Sub-Domain / Topic"
+                error={errors.sub_domain_id?.message}
+                placeholder="Select technical topic"
+                {...register('sub_domain_id')}
+              >
+                <option value="" disabled>
+                  Select technical topic
                 </option>
-              ))}
-            </Select>
+                {subDomains.map((sd) => (
+                  <option key={sd.id} value={sd.id}>
+                    {sd.name} {sd.domain ? `(${sd.domain.name})` : ''}
+                  </option>
+                ))}
+              </Select>
 
-            <Select
-              label="Difficulty Level"
-              error={errors.difficulty_level?.message}
-              {...register('difficulty_level')}
-            >
-              <option value="BEGINNER">Beginner</option>
-              <option value="INTERMEDIATE">Intermediate</option>
-              <option value="ADVANCED">Advanced</option>
-            </Select>
+              <Select
+                label="Difficulty Level"
+                error={errors.difficulty_level?.message}
+                {...register('difficulty_level')}
+              >
+                <option value="BEGINNER">Beginner</option>
+                <option value="INTERMEDIATE">Intermediate</option>
+                <option value="ADVANCED">Advanced</option>
+              </Select>
+            </div>
+          </div>
+
+          {/* Professional Metadata */}
+          <div className="pt-6 border-t border-border space-y-5">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-charcoal-muted">
+              Professional Course Metadata
+            </h3>
+
+            <div>
+              <Textarea
+                label="Prerequisites"
+                placeholder={`Basic computer literacy\nFamiliarity with using a web browser\nNo prior programming experience required`}
+                helperText="List the knowledge or skills learners should have before starting this course. Enter one prerequisite per line."
+                rows={3}
+                error={errors.prerequisites?.message}
+                {...register('prerequisites')}
+              />
+            </div>
+
+            <div>
+              <Textarea
+                label="Learning Outcomes"
+                placeholder={`Understand Python syntax and core programming concepts\nWrite reusable functions and modular programs\nWork with Python lists, dictionaries, tuples, and sets\nBuild small practical Python applications`}
+                helperText="Describe what learners will be able to do after completing this course. Enter one outcome per line."
+                rows={4}
+                error={errors.learning_outcomes?.message}
+                {...register('learning_outcomes')}
+              />
+            </div>
+
+            <div className="bg-sand/30 p-4 rounded-xl border border-border space-y-2">
+              <div className="flex items-center gap-2">
+                <Award className="w-5 h-5 text-teal" />
+                <label className="text-sm font-semibold text-charcoal">Certificate Availability</label>
+              </div>
+              <p className="text-xs text-charcoal-muted">
+                Choose whether learners earn an official verified certificate upon satisfying all course completion prerequisites.
+              </p>
+              <Select
+                error={errors.has_certificate?.message}
+                {...register('has_certificate')}
+              >
+                <option value="true">Certificate available upon completion</option>
+                <option value="false">No certificate</option>
+              </Select>
+            </div>
           </div>
 
           <div className="pt-6 border-t border-border flex items-center justify-between">

@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, status
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -8,7 +8,8 @@ from app.core.security import decode_token
 from app.models.user import User
 from app.models.taxonomy import SubDomain
 from app.models.course import Course, Module, Lesson
-from app.models.enums import UserRole, DifficultyLevel
+from app.models.quiz import Quiz, Question
+from app.models.enums import UserRole, DifficultyLevel, QuizType
 from app.schemas.course import (
     CourseCreate,
     CourseUpdate,
@@ -17,6 +18,7 @@ from app.schemas.course import (
     CoursePublishResponse,
 )
 from app.schemas.common import MessageResponse
+from app.core.storage import resolve_media_url
 
 router = APIRouter(prefix="/courses", tags=["Courses (Curriculum)"])
 
@@ -138,6 +140,53 @@ def get_course_detail(
                 detail="Course is currently in draft mode and not published",
             )
 
+    # Attach module quizzes and question counts
+    for mod in course.modules:
+        m_quiz = (
+            db.query(Quiz)
+            .options(selectinload(Quiz.questions))
+            .filter(Quiz.module_id == mod.id, Quiz.quiz_type == QuizType.MODULE, Quiz.is_active == True)
+            .first()
+        )
+        if m_quiz:
+            setattr(mod, "quiz", {
+                "id": m_quiz.id,
+                "title": m_quiz.title,
+                "description": m_quiz.description,
+                "quiz_type": m_quiz.quiz_type.value,
+                "passing_score": m_quiz.passing_score,
+                "max_attempts": m_quiz.max_attempts,
+                "questions_count": len(m_quiz.questions),
+            })
+        else:
+            setattr(mod, "quiz", None)
+
+    # Attach final course assessment
+    f_quiz = (
+        db.query(Quiz)
+        .options(selectinload(Quiz.questions))
+        .filter(Quiz.course_id == course.id, Quiz.quiz_type == QuizType.FINAL, Quiz.is_active == True)
+        .first()
+    )
+    if f_quiz:
+        setattr(course, "final_quiz", {
+            "id": f_quiz.id,
+            "title": f_quiz.title,
+            "description": f_quiz.description,
+            "quiz_type": f_quiz.quiz_type.value,
+            "passing_score": f_quiz.passing_score,
+            "max_attempts": f_quiz.max_attempts,
+            "questions_count": len(f_quiz.questions),
+        })
+    else:
+        setattr(course, "final_quiz", None)
+
+    # Resolve signed URLs for private lesson videos
+    for mod in course.modules:
+        for les in mod.lessons:
+            if les.video_url:
+                les.video_url = resolve_media_url(les.video_url)
+
     return course
 
 
@@ -191,6 +240,9 @@ def create_course(
         thumbnail_url=course_in.thumbnail_url,
         difficulty_level=course_in.difficulty_level,
         is_published=False,  # Always created as draft
+        prerequisites=course_in.prerequisites,
+        learning_outcomes=course_in.learning_outcomes,
+        has_certificate=course_in.has_certificate,
     )
     db.add(course)
     db.commit()
@@ -258,6 +310,12 @@ def update_course(
         course.difficulty_level = course_update.difficulty_level
     if course_update.is_published is not None:
         course.is_published = course_update.is_published
+    if course_update.prerequisites is not None:
+        course.prerequisites = course_update.prerequisites
+    if course_update.learning_outcomes is not None:
+        course.learning_outcomes = course_update.learning_outcomes
+    if course_update.has_certificate is not None:
+        course.has_certificate = course_update.has_certificate
 
     db.commit()
     db.refresh(course)

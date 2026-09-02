@@ -29,6 +29,24 @@ export const quizzesApi = {
     return res.data;
   },
 
+  // GET /api/v1/modules/{module_id}/quiz (Authoring mode)
+  getModuleQuiz: async (moduleId: string): Promise<QuizAuthoring> => {
+    const res = await apiClient.get<QuizAuthoring>(`/modules/${moduleId}/quiz`);
+    return res.data;
+  },
+
+  // GET /api/v1/courses/{course_id}/final-quiz (Authoring mode)
+  getCourseFinalQuiz: async (courseId: string): Promise<QuizAuthoring> => {
+    const res = await apiClient.get<QuizAuthoring>(`/courses/${courseId}/final-quiz`);
+    return res.data;
+  },
+
+  // GET /api/v1/courses/{course_id}/quizzes
+  getCourseQuizzes: async (courseId: string): Promise<QuizAuthoring[]> => {
+    const res = await apiClient.get<QuizAuthoring[]>(`/courses/${courseId}/quizzes`);
+    return res.data;
+  },
+
   // POST /api/v1/quizzes (Create quiz)
   create: async (payload: QuizCreatePayload): Promise<QuizAuthoring> => {
     const res = await apiClient.post<QuizAuthoring>('/quizzes', payload);

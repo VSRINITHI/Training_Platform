@@ -112,17 +112,31 @@ def course_hierarchy(instructor_owner):
 def test_quiz_crud_and_answer_masking(
     client: TestClient, instructor_owner, instructor_other, learner_user, admin_user, course_hierarchy
 ):
+    module_id = str(course_hierarchy["module_id"])
     lesson_id = str(course_hierarchy["lesson_id"])
 
-    # 1. Instructor Owner creates a Lesson Quiz
+    # 1. Instructor Owner creates a Module Assessment Quiz
     app.dependency_overrides[get_current_user] = lambda: instructor_owner
     try:
+        # First verify LESSON quiz is rejected
+        res_lesson_rej = client.post(
+            "/api/v1/quizzes",
+            json={
+                "title": "Lesson Quiz Rejection Test",
+                "quiz_type": "LESSON",
+                "lesson_id": lesson_id,
+                "passing_score": "80.00",
+            },
+            headers={"Authorization": "Bearer token"},
+        )
+        assert res_lesson_rej.status_code == status.HTTP_400_BAD_REQUEST
+
         quiz_payload = {
-            "title": "Lesson 1.1 Knowledge Check",
-            "quiz_type": "LESSON",
-            "lesson_id": lesson_id,
+            "title": "Module 1 Assessment Checkpoint",
+            "quiz_type": "MODULE",
+            "module_id": module_id,
             "passing_score": "80.00",
-            "max_attempts": 3,
+            "max_attempts": 2,
             "time_limit_minutes": 15,
             "is_active": True,
         }
@@ -295,7 +309,8 @@ def test_ai_draft_quarantine_and_review_workflow(
         # 6. Verify that the imported quiz, question, and options exist via authoring endpoint
         db = SessionLocal()
         try:
-            quiz = db.query(Quiz).filter(Quiz.lesson_id == uuid.UUID(lesson_id), Quiz.quiz_type == QuizType.LESSON).first()
+            module_id = str(course_hierarchy["module_id"])
+            quiz = db.query(Quiz).filter(Quiz.module_id == uuid.UUID(module_id), Quiz.quiz_type == QuizType.MODULE).first()
             assert quiz is not None
             quiz_id = str(quiz.id)
         finally:

@@ -12,6 +12,9 @@ import {
   ShieldCheck,
   ChevronRight,
   Sparkles,
+  ListChecks,
+  Info,
+  Check,
 } from 'lucide-react';
 import { coursesApi } from '../../api/courses';
 import { progressApi } from '../../api/progress';
@@ -77,9 +80,12 @@ export const CourseDetailsPage: React.FC = () => {
 
   const modules = course.modules || [];
   const totalLessons = modules.reduce((acc, m) => acc + (m.lessons?.length || 0), 0);
+  const hasCertificate = course.has_certificate !== false;
+  const learningOutcomes = Array.isArray(course.learning_outcomes) ? course.learning_outcomes : [];
+  const prerequisites = Array.isArray(course.prerequisites) ? course.prerequisites : [];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 max-w-6xl mx-auto">
       {/* Breadcrumb Navigation */}
       <div className="flex items-center gap-2 text-xs text-charcoal-muted">
         <Link to="/learner/discover" className="hover:text-charcoal hover:underline">
@@ -101,7 +107,11 @@ export const CourseDetailsPage: React.FC = () => {
           <div className="flex items-center gap-2 flex-wrap">
             {course.sub_domain && <Badge variant="primary">{course.sub_domain.name}</Badge>}
             {course.difficulty_level && <Badge variant="outline">{course.difficulty_level}</Badge>}
-            <Badge variant="success">Competency Verified</Badge>
+            {hasCertificate ? (
+              <Badge variant="success">Certificate Included</Badge>
+            ) : (
+              <Badge variant="default">Audit Track</Badge>
+            )}
           </div>
 
           <h1 className="text-2xl sm:text-4xl font-extrabold text-charcoal tracking-tight">
@@ -122,8 +132,8 @@ export const CourseDetailsPage: React.FC = () => {
               <span>{modules.length} Modules ({totalLessons} Lessons)</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <Award className="w-4 h-4 text-primary" />
-              <span>Verified Certificate</span>
+              <Award className={`w-4 h-4 ${hasCertificate ? 'text-teal' : 'text-slate-400'}`} />
+              <span>{hasCertificate ? 'Verified Certificate Available' : 'No Certificate'}</span>
             </div>
           </div>
         </div>
@@ -165,7 +175,79 @@ export const CourseDetailsPage: React.FC = () => {
 
             <div className="flex items-center justify-center gap-1.5 text-[11px] text-charcoal-muted">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Includes final assessment and certificate verification</span>
+              <span>
+                {hasCertificate
+                  ? 'Includes final assessment and certificate verification'
+                  : 'Full access to all course lessons and quizzes'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Course Overview Details: Learning Outcomes & Prerequisites */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Learning Outcomes */}
+        <div className="bg-white p-6 rounded-2xl border border-border shadow-card space-y-4">
+          <div className="flex items-center gap-2 text-charcoal">
+            <ListChecks className="w-5 h-5 text-teal" />
+            <h2 className="text-base font-bold">Learning Outcomes</h2>
+          </div>
+          {learningOutcomes.length > 0 ? (
+            <ul className="space-y-2.5">
+              {learningOutcomes.map((outcome, idx) => (
+                <li key={idx} className="flex items-start gap-2.5 text-xs text-charcoal leading-relaxed">
+                  <span className="flex-shrink-0 mt-0.5 w-4 h-4 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  </span>
+                  <span>{outcome}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-charcoal-muted italic">
+              Upon completion, you will gain comprehensive theoretical and applied mastery of the concepts covered in this curriculum.
+            </p>
+          )}
+        </div>
+
+        {/* Prerequisites & Certificate Info */}
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-border shadow-card space-y-4">
+            <div className="flex items-center gap-2 text-charcoal">
+              <Info className="w-5 h-5 text-primary" />
+              <h2 className="text-base font-bold">Prerequisites</h2>
+            </div>
+            {prerequisites.length > 0 ? (
+              <ul className="space-y-2">
+                {prerequisites.map((prereq, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-xs text-charcoal leading-relaxed">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
+                    <span>{prereq}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-charcoal-muted">
+                No prior specific prerequisites are required. A basic background and motivation to learn are sufficient.
+              </p>
+            )}
+          </div>
+
+          {/* Certificate Badge Card */}
+          <div className="bg-white p-5 rounded-2xl border border-border shadow-card flex items-center gap-4">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${hasCertificate ? 'bg-teal/10 text-teal' : 'bg-slate-100 text-slate-400'}`}>
+              <Award className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-charcoal">
+                {hasCertificate ? 'Official DataCaliper Certificate' : 'Self-Paced Audit Course'}
+              </h3>
+              <p className="text-xs text-charcoal-muted mt-0.5">
+                {hasCertificate
+                  ? 'Earn a verified, cryptographically signed certificate upon completing all modules and passing the final exam.'
+                  : 'This course is structured for self-directed study and knowledge mastery without certificate issuance.'}
+              </p>
             </div>
           </div>
         </div>

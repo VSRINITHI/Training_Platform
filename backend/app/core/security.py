@@ -170,7 +170,7 @@ def create_access_token(
     secret = settings.jwt_secret or "test-fallback-secret-for-local-hs256-tests"
 
     payload = {
-        "sub": subject,
+        "sub": str(subject),
         "email": email,
         "role": role,
         "aud": "authenticated",
