@@ -1,109 +1,86 @@
-DataCaliper Training Platform
+# DataCaliper Training Platform
 
-AI-powered, role-based training platform for course authoring, multimedia learning, instructor-reviewed assessments, learner progress tracking, and verifiable certificates.
+> AI-powered, role-based training platform for course authoring, multimedia learning, instructor-reviewed assessments, learner progress tracking, and verifiable certificates.
 
-1. Project Overview
+---
+
+> **Mermaid rendering:** All architecture diagrams in this README use fenced ```mermaid blocks with GitHub-compatible Mermaid syntax. GitHub renders Mermaid diagrams directly in Markdown files.
+
+## 1. Project Overview
 
 DataCaliper is a full-stack learning management and assessment platform built around the following curriculum hierarchy:
 
-Domain → Subdomain → Course → Module → Lesson
+**Domain → Subdomain → Course → Module → Lesson**
 
 The platform supports three roles:
 
-ADMIN — platform and user administration
-
-INSTRUCTOR — course, lesson, and assessment authoring
-
-USER / LEARNER — learning, assessments, progress, and certificates
+- **ADMIN** — platform and user administration
+- **INSTRUCTOR** — course, lesson, and assessment authoring
+- **USER / LEARNER** — learning, assessments, progress, and certificates
 
 The system combines conventional application logic with an AI-assisted assessment workflow using NVIDIA AI.
 
-2. Key Features
+---
 
-Course Management
+# 2. Key Features
 
-Domain and subdomain organization
+### Course Management
+- Domain and subdomain organization
+- Course creation and editing
+- Module and lesson management
+- Course publishing and unpublishing
+- Instructor ownership
 
-Course creation and editing
+### Learning
+- Video lessons
+- PDF and document materials
+- Lesson completion tracking
+- Module completion tracking
+- Course progress
+- Learner notes
+- Continue-learning experience
 
-Module and lesson management
+### Assessments
+- Module quizzes
+- Final course assessment
+- Instructor-created questions
+- AI-generated quiz drafts
+- Instructor review and editing
+- Instructor approval before publishing
+- Two-attempt module quiz rule
 
-Course publishing and unpublishing
+### AI
+- NVIDIA AI integration
+- Structured quiz generation
+- Content-grounded generation
+- Schema validation
+- Draft → Review → Publish lifecycle
 
-Instructor ownership
+### Certificates
+- Automatic certificate after successful completion
+- Persistent certificate record
+- Unique certificate number
+- Professional certificate view
+- Print / Save as PDF
+- Public verification
 
-Learning
+---
 
-Video lessons
+# 3. High-Level Architecture
 
-PDF and document materials
-
-Lesson completion tracking
-
-Module completion tracking
-
-Course progress
-
-Learner notes
-
-Continue-learning experience
-
-Assessments
-
-Module quizzes
-
-Final course assessment
-
-Instructor-created questions
-
-AI-generated quiz drafts
-
-Instructor review and editing
-
-Instructor approval before publishing
-
-Two-attempt module quiz rule
-
-AI
-
-NVIDIA AI integration
-
-Structured quiz generation
-
-Content-grounded generation
-
-Schema validation
-
-Draft → Review → Publish lifecycle
-
-Certificates
-
-Automatic certificate after successful completion
-
-Persistent certificate record
-
-Unique certificate number
-
-Professional certificate view
-
-Print / Save as PDF
-
-Public verification
-
-3. High-Level Architecture
-
-flowchart TB
+```mermaid
+graph TB
 
     USER[User]
 
-    subgraph FRONTEND[Frontend]
+    subgraph FRONTEND["Frontend"]
         REACT[React Application]
         LEARNER[Learner UI]
         INSTRUCTOR[Instructor UI]
         ADMIN[Admin UI]
     end
 
-    subgraph BACKEND[Backend]
+    subgraph BACKEND["Backend"]
         FASTAPI[FastAPI REST API]
         AUTH[Authentication and RBAC]
         COURSE[Course Service]
@@ -115,13 +92,13 @@ flowchart TB
         FILES[Storage Service]
     end
 
-    subgraph SUPABASE[Supabase]
+    subgraph SUPABASE["Supabase"]
         SUPA_AUTH[Supabase Auth]
         POSTGRES[(PostgreSQL)]
         STORAGE[Supabase Storage]
     end
 
-    subgraph NVIDIA[NVIDIA AI]
+    subgraph NVIDIA["NVIDIA AI"]
         LLM[Llama Instruct Model]
     end
 
@@ -154,9 +131,11 @@ flowchart TB
 
     AI --> LLM
     AI --> POSTGRES
+```
 
-Architecture Summary
+### Architecture Summary
 
+```text
 Browser
    |
    v
@@ -184,10 +163,14 @@ Supabase
    +---- PostgreSQL
    +---- Auth
    +---- Storage
+```
 
-4. Layered Architecture
+---
 
-flowchart TB
+# 4. Layered Architecture
+
+```mermaid
+graph TB
 
     UI[Presentation Layer]
     API[API Layer]
@@ -206,48 +189,27 @@ flowchart TB
 
     SERVICE --> STORAGE
     SERVICE --> EXTERNAL
+```
 
-Layer responsibilities
+### Layer responsibilities
 
-Layer
+| Layer | Responsibility |
+|---|---|
+| Presentation | React UI, routing, forms, user interaction |
+| API | FastAPI REST endpoints |
+| Security | Authentication, RBAC, ownership checks |
+| Services | Business rules and workflows |
+| Data Access | SQLAlchemy / database operations |
+| Database | Persistent application data |
+| Storage | Videos and learning materials |
+| External Services | NVIDIA AI and Supabase Auth |
 
-Responsibility
+---
 
-Presentation
+# 5. RBAC Architecture
 
-React UI, routing, forms, user interaction
-
-API
-
-FastAPI REST endpoints
-
-Security
-
-Authentication, RBAC, ownership checks
-
-Services
-
-Business rules and workflows
-
-Data Access
-
-SQLAlchemy / database operations
-
-Database
-
-Persistent application data
-
-Storage
-
-Videos and learning materials
-
-External Services
-
-NVIDIA AI and Supabase Auth
-
-5. RBAC Architecture
-
-flowchart LR
+```mermaid
+graph LR
 
     USER[Authenticated User]
     AUTH[Authentication]
@@ -271,117 +233,32 @@ flowchart LR
     ADMIN --> ADMIN_ACTIONS
     INSTRUCTOR --> INSTRUCTOR_ACTIONS
     LEARNER --> LEARNER_ACTIONS
+```
 
-Permission Matrix
+## Permission Matrix
 
-Capability
+| Capability | ADMIN | INSTRUCTOR | USER |
+|---|---:|---:|---:|
+| Manage users | Yes | No | No |
+| Create courses | No | Yes | No |
+| Edit owned courses | No | Yes | No |
+| Manage lessons | No | Yes | No |
+| Generate AI assessments | No | Yes | No |
+| Review assessments | No | Yes | No |
+| Publish assessments | No | Yes | No |
+| Browse published courses | Yes | Yes | Yes |
+| Learn courses | Yes | Yes | Yes |
+| Attempt assessments | No | No | Yes |
+| Earn certificates | No | No | Yes |
+| Verify certificates | Yes | Yes | Yes |
 
-ADMIN
+**Important:** the frontend may hide or show UI based on role, but the backend remains the authoritative authorization layer.
 
-INSTRUCTOR
+---
 
-USER
+# 6. Authentication Flow
 
-Manage users
-
-Yes
-
-No
-
-No
-
-Create courses
-
-No
-
-Yes
-
-No
-
-Edit owned courses
-
-No
-
-Yes
-
-No
-
-Manage lessons
-
-No
-
-Yes
-
-No
-
-Generate AI assessments
-
-No
-
-Yes
-
-No
-
-Review assessments
-
-No
-
-Yes
-
-No
-
-Publish assessments
-
-No
-
-Yes
-
-No
-
-Browse published courses
-
-Yes
-
-Yes
-
-Yes
-
-Learn courses
-
-Yes
-
-Yes
-
-Yes
-
-Attempt assessments
-
-No
-
-No
-
-Yes
-
-Earn certificates
-
-No
-
-No
-
-Yes
-
-Verify certificates
-
-Yes
-
-Yes
-
-Yes
-
-Important: the frontend may hide or show UI based on role, but the backend remains the authoritative authorization layer.
-
-6. Authentication Flow
-
+```mermaid
 sequenceDiagram
 
     participant User
@@ -400,12 +277,16 @@ sequenceDiagram
     Database-->>API: User role
     API-->>Frontend: Authorized response
     Frontend-->>User: Protected application
+```
 
 The user does not choose an arbitrary role during normal authentication. The backend resolves authorization from trusted identity and role information.
 
-7. Course Architecture
+---
 
-flowchart TD
+# 7. Course Architecture
+
+```mermaid
+graph TD
 
     DOMAIN[Domain]
     SUBDOMAIN[Subdomain]
@@ -439,9 +320,11 @@ flowchart TD
     MODULE2 --> QUIZ2
 
     COURSE --> FINAL
+```
 
-Curriculum hierarchy
+### Curriculum hierarchy
 
+```text
 Domain
 └── Subdomain
     └── Course
@@ -455,12 +338,16 @@ Domain
         │   └── Module Quiz
         │
         └── Final Assessment
+```
 
-There are no lesson-level quizzes.
+There are **no lesson-level quizzes**.
 
-8. Learner Learning Flow
+---
 
-flowchart TD
+# 8. Learner Learning Flow
+
+```mermaid
+graph TD
 
     LOGIN[Login]
     DISCOVER[Discover Published Course]
@@ -504,10 +391,14 @@ flowchart TD
     FINALPASS -->|Yes| COURSECOMPLETE
 
     COURSECOMPLETE --> CERTIFICATE
+```
 
-9. Assessment Architecture
+---
 
-flowchart TD
+# 9. Assessment Architecture
+
+```mermaid
+graph TD
 
     LESSONS[Complete Module Lessons]
     QUIZ[Module Quiz]
@@ -530,26 +421,27 @@ flowchart TD
     RESULT2 -->|No| RELEARN
 
     RELEARN --> LESSONS
+```
 
-Module Quiz Rule
+## Module Quiz Rule
 
-Each module quiz allows a maximum of two attempts per completion cycle.
+Each module quiz allows a maximum of **two attempts per completion cycle**.
 
 If both attempts fail:
 
-The affected module returns to relearning.
+1. The affected module returns to relearning.
+2. The learner revisits that module.
+3. Other completed modules are not reset.
+4. The backend controls the attempt count and state transition.
 
-The learner revisits that module.
+---
 
-Other completed modules are not reset.
-
-The backend controls the attempt count and state transition.
-
-10. AI Quiz Generation Architecture
+# 10. AI Quiz Generation Architecture
 
 The AI workflow is one of the core features of DataCaliper.
 
-flowchart TD
+```mermaid
+graph TD
 
     INSTRUCTOR[Instructor]
     LESSON[Selected Lesson]
@@ -590,9 +482,11 @@ flowchart TD
     REVIEW --> APPROVE
     APPROVE --> PUBLISH
     PUBLISH --> LEARNER
+```
 
-AI lifecycle
+### AI lifecycle
 
+```text
 Lesson Content
       |
       v
@@ -624,28 +518,25 @@ Approval
       |
       v
 Published Quiz
+```
 
-AI reliability principles
+### AI reliability principles
 
-AI credentials are backend-only.
+- AI credentials are backend-only.
+- AI output is untrusted input.
+- Structured output is validated before persistence.
+- Questions and options are stored relationally.
+- Generated quizzes remain drafts until instructor approval.
+- AI is grounded in available lesson text/materials.
+- A video is not treated as AI-readable unless usable transcript/text content exists.
+- AI generation does not directly publish content.
 
-AI output is untrusted input.
+---
 
-Structured output is validated before persistence.
+# 11. Lesson Content Delivery
 
-Questions and options are stored relationally.
-
-Generated quizzes remain drafts until instructor approval.
-
-AI is grounded in available lesson text/materials.
-
-A video is not treated as AI-readable unless usable transcript/text content exists.
-
-AI generation does not directly publish content.
-
-11. Lesson Content Delivery
-
-flowchart LR
+```mermaid
+graph LR
 
     INSTRUCTOR[Instructor]
     UPLOAD[Upload Content]
@@ -673,17 +564,23 @@ flowchart LR
 
     WORKSPACE --> PLAYER
     WORKSPACE --> PDF
+```
 
 Recommended private storage buckets:
 
+```text
 lesson-videos
 lesson-materials
+```
 
 The database stores lesson metadata and storage references; the actual video and document files are stored in Supabase Storage.
 
-12. Certificate Architecture
+---
 
-flowchart TD
+# 12. Certificate Architecture
+
+```mermaid
+graph TD
 
     MODULES[All Modules Completed]
     FINAL[Final Assessment]
@@ -712,19 +609,20 @@ flowchart TD
 
     ID --> VERIFY
     VERIFY --> DETAILS
+```
 
-Certificate integrity
+## Certificate integrity
 
-The certificate number maps to one authoritative certificate record.
+The certificate number maps to **one authoritative certificate record**.
 
 That record contains the information used by both:
 
-Certificate view
-
-Verification page
+- Certificate view
+- Verification page
 
 Therefore:
 
+```text
 Certificate Number
         |
         v
@@ -738,13 +636,17 @@ Certificate Record
         +---- Certificate View
         |
         +---- Public Verification
+```
 
 This avoids mismatches between the certificate and its verification result.
 
-13. Database Architecture
+---
+
+# 13. Database Architecture
 
 The following is the conceptual relational model:
 
+```mermaid
 erDiagram
 
     USERS ||--o{ COURSES : authors
@@ -774,74 +676,35 @@ erDiagram
 
     USERS ||--o{ CERTIFICATES : earns
     COURSES ||--o{ CERTIFICATES : awards
+```
 
-Main entities
+### Main entities
 
-Entity
+| Entity | Purpose |
+|---|---|
+| Users | Identity, role, ownership |
+| Domains | Top-level curriculum grouping |
+| Subdomains | Domain subdivisions |
+| Courses | Main learning product |
+| Modules | Course sections |
+| Lessons | Individual learning units |
+| Lesson Progress | Learner lesson completion |
+| Module Progress | Learner module state |
+| Course Progress | Overall course state |
+| Quizzes | Module/final assessments |
+| Questions | Assessment questions |
+| Question Options | Answer choices |
+| Quiz Attempts | Learner assessment attempts |
+| Certificates | Issued completion credentials |
 
-Purpose
+> The ER diagram is conceptual. The repository migrations and SQLAlchemy models are the source of truth for exact implementation details.
 
-Users
+---
 
-Identity, role, ownership
+# 14. API Architecture
 
-Domains
-
-Top-level curriculum grouping
-
-Subdomains
-
-Domain subdivisions
-
-Courses
-
-Main learning product
-
-Modules
-
-Course sections
-
-Lessons
-
-Individual learning units
-
-Lesson Progress
-
-Learner lesson completion
-
-Module Progress
-
-Learner module state
-
-Course Progress
-
-Overall course state
-
-Quizzes
-
-Module/final assessments
-
-Questions
-
-Assessment questions
-
-Question Options
-
-Answer choices
-
-Quiz Attempts
-
-Learner assessment attempts
-
-Certificates
-
-Issued completion credentials
-
-The ER diagram is conceptual. The repository migrations and SQLAlchemy models are the source of truth for exact implementation details.
-
-14. API Architecture
-
-flowchart TB
+```mermaid
+graph TB
 
     CLIENT[React Client]
     API[FastAPI REST API]
@@ -886,9 +749,13 @@ flowchart TB
     SERVICE --> DB
     SERVICE --> FILES
     SERVICE --> NVIDIA
+```
 
-15. Request Lifecycle
+---
 
+# 15. Request Lifecycle
+
+```mermaid
 sequenceDiagram
 
     participant Browser
@@ -912,10 +779,14 @@ sequenceDiagram
 
     Service-->>API: Result
     API-->>Browser: HTTP Response
+```
 
-16. Error Handling
+---
 
-flowchart TD
+# 16. Error Handling
+
+```mermaid
+graph TD
 
     REQUEST[Incoming Request]
     AUTH[Authenticate]
@@ -943,26 +814,24 @@ flowchart TD
     VALIDOK -->|Yes| SERVICE
 
     SERVICE --> SUCCESS
+```
 
 For long-running AI operations, the frontend should explicitly handle:
 
-loading
+- loading
+- success
+- validation failure
+- network failure
+- timeout
+- backend-created result after client timeout
+- recovery without blind duplicate generation
 
-success
+---
 
-validation failure
+# 17. Frontend Architecture
 
-network failure
-
-timeout
-
-backend-created result after client timeout
-
-recovery without blind duplicate generation
-
-17. Frontend Architecture
-
-flowchart TD
+```mermaid
+graph TD
 
     APP[React Application]
     ROUTER[Application Router]
@@ -988,46 +857,37 @@ flowchart TD
     ADMIN --> SERVICES
 
     SERVICES --> API[FastAPI API]
+```
 
-Frontend responsibilities
+### Frontend responsibilities
 
-UI rendering
+- UI rendering
+- Routing
+- Forms
+- API communication
+- Client-side state
+- User feedback
+- Role-specific presentation
 
-Routing
+### Backend responsibilities
 
-Forms
+- Authentication
+- Authorization
+- Business rules
+- Progress calculation
+- Assessment attempts
+- Completion eligibility
+- Certificate issuance
+- Persistent state
 
-API communication
+---
 
-Client-side state
+# 18. Role-Based Workflows
 
-User feedback
+## Learner
 
-Role-specific presentation
-
-Backend responsibilities
-
-Authentication
-
-Authorization
-
-Business rules
-
-Progress calculation
-
-Assessment attempts
-
-Completion eligibility
-
-Certificate issuance
-
-Persistent state
-
-18. Role-Based Workflows
-
-Learner
-
-flowchart LR
+```mermaid
+graph LR
 
     LOGIN[Login]
     DISCOVER[Browse Courses]
@@ -1044,10 +904,12 @@ flowchart LR
     MODULE --> LEARN
     MODULE --> FINAL
     FINAL --> CERT
+```
 
-Instructor
+## Instructor
 
-flowchart LR
+```mermaid
+graph LR
 
     LOGIN[Login]
     COURSE[Create Course]
@@ -1065,10 +927,12 @@ flowchart LR
     AI --> REVIEW
     REVIEW --> APPROVE
     APPROVE --> PUBLISH
+```
 
-Admin
+## Admin
 
-flowchart LR
+```mermaid
+graph LR
 
     LOGIN[Login]
     USERS[Manage Users]
@@ -1076,76 +940,36 @@ flowchart LR
 
     LOGIN --> USERS
     LOGIN --> GOVERN
+```
 
-19. Technology Stack
+---
 
-Category
+# 19. Technology Stack
 
-Technology
+| Category | Technology |
+|---|---|
+| Frontend | React |
+| Language | TypeScript / JavaScript |
+| Build Tool | Vite |
+| Backend | Python |
+| API Framework | FastAPI |
+| ASGI Server | Uvicorn |
+| ORM | SQLAlchemy |
+| Validation | Pydantic |
+| Database | Supabase PostgreSQL |
+| Authentication | Supabase Auth |
+| Object Storage | Supabase Storage |
+| AI Provider | NVIDIA AI API |
+| AI Model | Configurable NVIDIA-hosted instruct model |
+| API Style | REST |
+| Version Control | Git / GitHub |
 
-Frontend
+---
 
-React
+# 20. Security Architecture
 
-Language
-
-TypeScript / JavaScript
-
-Build Tool
-
-Vite
-
-Backend
-
-Python
-
-API Framework
-
-FastAPI
-
-ASGI Server
-
-Uvicorn
-
-ORM
-
-SQLAlchemy
-
-Validation
-
-Pydantic
-
-Database
-
-Supabase PostgreSQL
-
-Authentication
-
-Supabase Auth
-
-Object Storage
-
-Supabase Storage
-
-AI Provider
-
-NVIDIA AI API
-
-AI Model
-
-Configurable NVIDIA-hosted instruct model
-
-API Style
-
-REST
-
-Version Control
-
-Git / GitHub
-
-20. Security Architecture
-
-flowchart TD
+```mermaid
+graph TD
 
     BROWSER[Browser]
     AUTH[Authentication]
@@ -1166,47 +990,49 @@ flowchart TD
     BUSINESS --> DB
     BUSINESS --> STORAGE
     BUSINESS --> SECRETS
+```
 
-Security principles
+### Security principles
 
-Authentication through Supabase Auth
+- Authentication through Supabase Auth
+- Backend-enforced RBAC
+- Resource ownership checks
+- Input validation
+- Backend-only AI credentials
+- No service-role secrets in frontend code
+- Controlled storage access
+- Server-side assessment attempt enforcement
+- Persistent certificate verification
 
-Backend-enforced RBAC
+---
 
-Resource ownership checks
-
-Input validation
-
-Backend-only AI credentials
-
-No service-role secrets in frontend code
-
-Controlled storage access
-
-Server-side assessment attempt enforcement
-
-Persistent certificate verification
-
-21. Configuration
+# 21. Configuration
 
 Backend environment variables:
 
+```env
 NVIDIA_API_KEY=your_server_side_key
 NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
 NVIDIA_MODEL=meta/llama-3.1-8b-instruct
 
 SUPABASE_URL=your_supabase_url
 SUPABASE_SERVICE_ROLE_KEY=your_server_side_key
+```
 
 Frontend-safe configuration:
 
+```env
 VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_PUBLISHABLE_KEY=your_public_key
+```
 
 Never commit real credentials.
 
-22. Project Structure
+---
 
+# 22. Project Structure
+
+```text
 DataCaliper/
 │
 ├── backend/
@@ -1238,94 +1064,75 @@ DataCaliper/
 ├── .env.example
 ├── README.md
 └── ...
+```
 
-23. Testing Strategy
+---
 
-Backend
+# 23. Testing Strategy
 
+## Backend
+
+```bash
 cd backend
 python -m pytest
+```
 
-Frontend
+## Frontend
 
+```bash
 cd frontend
 npm run build
+```
 
-Critical workflows
+## Critical workflows
 
-Authentication
+### Authentication
+- Login
+- Protected routes
+- Role authorization
 
-Login
+### Course
+- Course creation
+- Module creation
+- Lesson creation
+- Publish / unpublish
 
-Protected routes
+### Learning
+- Video playback
+- PDF/material viewing
+- Lesson completion
+- Progress persistence
 
-Role authorization
+### Assessment
+- Module quiz visibility
+- Two-attempt rule
+- Relearning state
+- Final assessment eligibility
 
-Course
+### AI
+- AI request
+- Structured response
+- Validation
+- Draft persistence
+- Instructor review
+- Approval
+- Publishing
 
-Course creation
+### Certificate
+- Successful final assessment
+- Certificate generation
+- Correct learner name
+- Correct course
+- Stable certificate number
+- Public verification
+- Invalid certificate rejection
 
-Module creation
+---
 
-Lesson creation
+# 24. End-to-End System Flow
 
-Publish / unpublish
-
-Learning
-
-Video playback
-
-PDF/material viewing
-
-Lesson completion
-
-Progress persistence
-
-Assessment
-
-Module quiz visibility
-
-Two-attempt rule
-
-Relearning state
-
-Final assessment eligibility
-
-AI
-
-AI request
-
-Structured response
-
-Validation
-
-Draft persistence
-
-Instructor review
-
-Approval
-
-Publishing
-
-Certificate
-
-Successful final assessment
-
-Certificate generation
-
-Correct learner name
-
-Correct course
-
-Stable certificate number
-
-Public verification
-
-Invalid certificate rejection
-
-24. End-to-End System Flow
-
-flowchart TD
+```mermaid
+graph TD
 
     ADMIN[Admin]
     INSTRUCTOR[Instructor]
@@ -1357,10 +1164,14 @@ flowchart TD
     LEARNER --> FINAL
     FINAL --> CERT
     CERT --> VERIFY
+```
 
-25. Complete Architecture
+---
 
-flowchart TB
+# 25. Complete Architecture
+
+```mermaid
+graph TB
 
     USER[Users]
 
@@ -1404,35 +1215,39 @@ flowchart TB
     ASSESSMENT --> AI
     AI --> NVIDIA
     AI --> DB
+```
 
-26. Core Design Principles
+---
 
-Backend authoritative
+# 26. Core Design Principles
+
+### Backend authoritative
 
 The backend is the source of truth for security, progress, attempts, completion, and certificates.
 
-Instructor-controlled AI
+### Instructor-controlled AI
 
 AI assists instructors rather than automatically publishing learner-facing content.
 
-Relational data
+### Relational data
 
 Core entities are stored as structured database records instead of relying on frontend-only state or opaque JSON blobs.
 
-Traceable certificates
+### Traceable certificates
 
 A certificate number resolves to one authoritative certificate record.
 
-Separation of concerns
+### Separation of concerns
 
 Frontend, API, authorization, services, database, storage, and AI integrations have separate responsibilities.
 
-Secure credentials
+### Secure credentials
 
 Private credentials remain on the backend.
 
-Explicit learning lifecycle
+### Explicit learning lifecycle
 
+```text
 Discover
    ↓
 Learn
@@ -1450,11 +1265,15 @@ Course Completion
 Certificate
    ↓
 Verification
+```
 
-27. Final Architecture Summary
+---
+
+# 27. Final Architecture Summary
 
 DataCaliper follows a layered full-stack architecture:
 
+```text
                         ┌──────────────────────┐
                         │        USERS         │
                         └──────────┬───────────┘
@@ -1487,8 +1306,14 @@ DataCaliper follows a layered full-stack architecture:
           │ Auth             │              │ Model            │
           │ Storage          │              └──────────────────┘
           └──────────────────┘
+```
 
-In one sentence
+### In one sentence
 
-DataCaliper is a React + FastAPI + Supabase training platform with backend-enforced RBAC, structured course and progress management, instructor-controlled NVIDIA AI assessment generation, server-authoritative assessment rules, and persistent verifiable certificates.
+**DataCaliper is a React + FastAPI + Supabase training platform with backend-enforced RBAC, structured course and progress management, instructor-controlled NVIDIA AI assessment generation, server-authoritative assessment rules, and persistent verifiable certificates.**
 
+---
+
+## License
+
+This project was developed as a training-platform / hackathon project.
