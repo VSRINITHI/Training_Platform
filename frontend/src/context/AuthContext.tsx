@@ -19,6 +19,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string, fullName: string) => Promise<SignUpResult>;
   resendConfirmation: (email: string) => Promise<{ error?: string }>;
+  resetPasswordForEmail: (email: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -144,6 +145,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const resetPasswordForEmail = async (email: string) => {
+    try {
+      const redirectTo = `${window.location.origin}/auth/callback?type=recovery`;
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo,
+      });
+      if (error) {
+        return { error: error.message };
+      }
+      return {};
+    } catch (err: any) {
+      return { error: err.message || 'Failed to send password reset email' };
+    }
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setSession(null);
@@ -170,6 +186,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signIn,
         signUp,
         resendConfirmation,
+        resetPasswordForEmail,
         signOut,
         refreshProfile,
       }}

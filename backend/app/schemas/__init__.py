@@ -8,6 +8,11 @@ from app.schemas.user import (
     UserInterestResponse,
     UserInterestsUpdate,
 )
+from app.schemas.invitation import (
+    InviteUserRequest,
+    InvitationResponse,
+    InvitationListResponse,
+)
 from app.schemas.taxonomy import (
     DomainBase,
     DomainCreate,
@@ -98,6 +103,10 @@ __all__ = [
     "UserInterestCreate",
     "UserInterestResponse",
     "UserInterestsUpdate",
+    # Invitations
+    "InviteUserRequest",
+    "InvitationResponse",
+    "InvitationListResponse",
     # Taxonomy
     "DomainBase",
     "DomainCreate",

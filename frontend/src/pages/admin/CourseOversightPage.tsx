@@ -9,6 +9,9 @@ import {
   Globe,
   SlidersHorizontal,
   User,
+  Edit,
+  Trash2,
+  Layers,
 } from 'lucide-react';
 import { coursesApi } from '../../api/courses';
 import { useToast } from '../../context/ToastContext';
@@ -18,12 +21,15 @@ import { SearchInput } from '../../components/ui/SearchInput';
 import { Badge } from '../../components/ui/Badge';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { Course } from '../../types';
 
 export const CourseOversightPage: React.FC = () => {
   const queryClient = useQueryClient();
   const { success, error: toastError } = useToast();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PUBLISHED' | 'DRAFT'>('ALL');
+  const [courseToDelete, setCourseToDelete] = useState<Course | null>(null);
 
   // Admin retrieves all platform courses using my_authored: true
   const { data: courses = [], isLoading } = useQuery({
@@ -31,6 +37,7 @@ export const CourseOversightPage: React.FC = () => {
     queryFn: () => coursesApi.list({ my_authored: true }),
   });
 
+  // Publish / Unpublish Mutation
   const publishMutation = useMutation({
     mutationFn: async ({ id, isPublished }: { id: string; isPublished: boolean }) => {
       if (isPublished) {
@@ -45,6 +52,19 @@ export const CourseOversightPage: React.FC = () => {
     },
     onError: (err: any) => {
       toastError('Action Failed', err.message);
+    },
+  });
+
+  // Delete Course Mutation
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => coursesApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-courses-oversight'] });
+      success('Course Deleted', 'The course and its associated curriculum have been removed.');
+      setCourseToDelete(null);
+    },
+    onError: (err: any) => {
+      toastError('Delete Failed', err.message);
     },
   });
 
@@ -76,7 +96,7 @@ export const CourseOversightPage: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Platform Course Oversight"
-        description="Inspect all platform courses, view authoring instructors, and regulate publication states."
+        description="Inspect, preview, modify, publish/unpublish, or delete all platform courses with full administrative authority."
         badge={
           <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-charcoal">
             {courses.length} Total Tracks
@@ -160,7 +180,7 @@ export const CourseOversightPage: React.FC = () => {
                   <th className="px-6 py-3.5">Topic / Sub-Domain</th>
                   <th className="px-6 py-3.5">Difficulty</th>
                   <th className="px-6 py-3.5">Status</th>
-                  <th className="px-6 py-3.5 text-right">Publication Action</th>
+                  <th className="px-6 py-3.5 text-right">Administrative Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border text-charcoal">
@@ -200,19 +220,54 @@ export const CourseOversightPage: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <Button
-                        size="sm"
-                        variant={course.is_published ? 'outline' : 'primary'}
-                        isLoading={publishMutation.isPending}
-                        onClick={() =>
-                          publishMutation.mutate({
-                            id: course.id,
-                            isPublished: course.is_published,
-                          })
-                        }
-                      >
-                        {course.is_published ? 'Unpublish' : 'Publish'}
-                      </Button>
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        {/* View / Curriculum Details */}
+                        <Link
+                          to={`/instructor/courses/${course.id}/curriculum`}
+                          title="View Curriculum"
+                        >
+                          <Button size="sm" variant="ghost" className="p-1.5 text-charcoal-muted hover:text-primary">
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </Link>
+
+                        {/* Edit Metadata */}
+                        <Link
+                          to={`/instructor/courses/${course.id}/edit`}
+                          title="Edit Course"
+                        >
+                          <Button size="sm" variant="ghost" className="p-1.5 text-charcoal-muted hover:text-primary">
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                        </Link>
+
+                        {/* Publish / Unpublish Toggle */}
+                        <Button
+                          size="sm"
+                          variant={course.is_published ? 'outline' : 'primary'}
+                          isLoading={publishMutation.isPending}
+                          onClick={() =>
+                            publishMutation.mutate({
+                              id: course.id,
+                              isPublished: course.is_published,
+                            })
+                          }
+                          className="text-xs"
+                        >
+                          {course.is_published ? 'Unpublish' : 'Publish'}
+                        </Button>
+
+                        {/* Delete Course */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 p-1.5"
+                          onClick={() => setCourseToDelete(course)}
+                          title="Delete Course"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -220,6 +275,19 @@ export const CourseOversightPage: React.FC = () => {
             </table>
           </div>
         </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {courseToDelete && (
+        <ConfirmDialog
+          isOpen={Boolean(courseToDelete)}
+          onClose={() => setCourseToDelete(null)}
+          onConfirm={() => deleteMutation.mutate(courseToDelete.id)}
+          title="Delete Platform Course"
+          message={`Are you sure you want to delete "${courseToDelete.title}"? This will permanently remove the course, all its modules, lessons, and quizzes platform-wide.`}
+          confirmLabel="Delete Course"
+          isLoading={deleteMutation.isPending}
+        />
       )}
     </div>
   );

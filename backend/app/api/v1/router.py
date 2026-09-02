@@ -13,11 +13,13 @@ from app.api.v1.endpoints import (
     enrollments,
     progress,
     certificates,
+    invitations,
 )
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["Health"])
 api_router.include_router(auth.router)
+api_router.include_router(invitations.router)
 api_router.include_router(domains.router)
 api_router.include_router(sub_domains.router)
 api_router.include_router(interests.router)
@@ -29,3 +31,4 @@ api_router.include_router(quizzes.router)
 api_router.include_router(enrollments.router)
 api_router.include_router(progress.router)
 api_router.include_router(certificates.router)
+

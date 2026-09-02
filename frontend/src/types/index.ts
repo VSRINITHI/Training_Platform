@@ -17,6 +17,39 @@ export interface UserUpdatePayload {
   role?: UserRole;
 }
 
+// User Invitation Types
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'FAILED' | 'CANCELLED';
+
+export interface UserInvitation {
+  id: string;
+  email: string;
+  role: 'USER' | 'INSTRUCTOR';
+  status: InvitationStatus;
+  invited_by?: {
+    id: string;
+    email: string;
+    full_name: string;
+  } | null;
+  supabase_user_id?: string | null;
+  invited_at: string;
+  accepted_at?: string | null;
+  expires_at: string;
+  resent_count: number;
+  notes?: string | null;
+  email_sent?: boolean;
+  email_error?: string | null;
+}
+
+export interface InviteUserPayload {
+  email: string;
+  role: 'USER' | 'INSTRUCTOR';
+}
+
+export interface InvitationListResponse {
+  invitations: UserInvitation[];
+  total: number;
+}
+
 // Taxonomy Types
 export interface Domain {
   id: string;

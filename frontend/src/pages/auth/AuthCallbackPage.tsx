@@ -19,11 +19,14 @@ export const AuthCallbackPage: React.FC = () => {
 
     const handleAuthCallback = async () => {
       try {
-        // 1. Check for PKCE authorization code in query params
         const params = new URLSearchParams(location.search);
+        const hashClean = location.hash.startsWith('#') ? location.hash.substring(1) : location.hash;
+        const hashParams = new URLSearchParams(hashClean);
+
         const code = params.get('code');
-        const error = params.get('error');
-        const errorDescription = params.get('error_description');
+        const callbackType = params.get('type') || hashParams.get('type');
+        const error = params.get('error') || hashParams.get('error');
+        const errorDescription = params.get('error_description') || hashParams.get('error_description');
 
         if (error) {
           if (!isMounted) return;
@@ -32,6 +35,8 @@ export const AuthCallbackPage: React.FC = () => {
           return;
         }
 
+        // 1. Exchange PKCE code if present
+        let currentSession = null;
         if (code) {
           const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
           if (exchangeError) {
@@ -40,38 +45,63 @@ export const AuthCallbackPage: React.FC = () => {
             setErrorMessage(exchangeError.message);
             return;
           }
+          currentSession = data.session;
         }
 
-        // 2. Retrieve session (handles both PKCE exchange and hash fragment session auto-detection)
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-        if (sessionError) {
-          if (!isMounted) return;
-          setStatus('error');
-          setErrorMessage(sessionError.message);
-          return;
+        // 2. Retrieve established session if not already returned by exchange
+        if (!currentSession) {
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError) {
+            if (!isMounted) return;
+            setStatus('error');
+            setErrorMessage(sessionError.message);
+            return;
+          }
+          currentSession = session;
         }
 
-        if (!session) {
-          // Wait briefly in case onAuthStateChange is still processing hash fragment
+        // 3. Fallback listener if session is still being established via hash fragment
+        if (!currentSession) {
           const { data: authListener } = supabase.auth.onAuthStateChange(async (event, newSession) => {
             if (newSession && isMounted) {
               authListener.subscription.unsubscribe();
-              await syncAndRedirect(newSession);
+              if (event === 'PASSWORD_RECOVERY' || callbackType === 'recovery') {
+                navigate('/set-password?mode=recovery', { replace: true });
+              } else if (checkIfMustSetPassword(newSession.user, params, hashParams)) {
+                navigate('/set-password?mode=invite', { replace: true });
+              } else {
+                await syncAndRedirect(newSession);
+              }
             }
           });
 
-          // Timeout after 5 seconds if no session arrives
           setTimeout(() => {
             if (isMounted && status === 'processing') {
               setStatus('error');
-              setErrorMessage('Verification link expired or session could not be established. Please try logging in.');
+              setErrorMessage('Verification link expired or session could not be established. Please try logging in or requesting a new reset link.');
             }
           }, 5000);
           return;
         }
 
-        await syncAndRedirect(session);
+        // 4. Route decision:
+        // A. Password Recovery flow -> /set-password?mode=recovery
+        if (callbackType === 'recovery') {
+          if (!isMounted) return;
+          navigate('/set-password?mode=recovery', { replace: true });
+          return;
+        }
+
+        // B. Admin Invitation flow -> /set-password?mode=invite
+        const isInvite = checkIfMustSetPassword(currentSession.user, params, hashParams);
+        if (isInvite) {
+          if (!isMounted) return;
+          navigate('/set-password?mode=invite', { replace: true });
+          return;
+        }
+
+        // C. Normal registration email confirmation -> redirect to dashboard
+        await syncAndRedirect(currentSession);
       } catch (err: any) {
         if (!isMounted) return;
         setStatus('error');
@@ -79,9 +109,26 @@ export const AuthCallbackPage: React.FC = () => {
       }
     };
 
+    const checkIfMustSetPassword = (user: any, searchParams: URLSearchParams, hashParams: URLSearchParams): boolean => {
+      const callbackType = searchParams.get('type') || hashParams.get('type');
+      if (callbackType === 'invite') {
+        return true;
+      }
+      if (!user) return false;
+      if (user.app_metadata?.needs_password === true || user.user_metadata?.needs_password === true) {
+        return true;
+      }
+      if (user.app_metadata?.is_invited === true || user.user_metadata?.is_invited === true) {
+        return true;
+      }
+      if (user.invited_at && user.user_metadata?.needs_password !== false && user.app_metadata?.needs_password !== false) {
+        return true;
+      }
+      return false;
+    };
+
     const syncAndRedirect = async (activeSession: any) => {
       try {
-        // Synchronize backend user record and profile
         let userProfile;
         try {
           userProfile = await authApi.syncProfile();
@@ -94,7 +141,6 @@ export const AuthCallbackPage: React.FC = () => {
         if (!isMounted) return;
         setStatus('success');
 
-        // Route after brief confirmation animation
         setTimeout(() => {
           if (!isMounted) return;
           const userRole = userProfile?.role;
@@ -141,9 +187,9 @@ export const AuthCallbackPage: React.FC = () => {
               <div className="w-16 h-16 bg-indigo-50 text-primary rounded-full flex items-center justify-center mx-auto">
                 <Loader2 className="w-8 h-8 animate-spin" />
               </div>
-              <h2 className="text-xl font-bold text-charcoal">Verifying Your Email</h2>
+              <h2 className="text-xl font-bold text-charcoal">Verifying Your Account</h2>
               <p className="text-xs sm:text-sm text-charcoal-muted">
-                Establishing your secure session and setting up your workspace...
+                Establishing your secure session and preparing your workspace...
               </p>
             </>
           )}
@@ -169,10 +215,15 @@ export const AuthCallbackPage: React.FC = () => {
               <p className="text-xs sm:text-sm text-rose-600 bg-rose-50 p-3 rounded-xl border border-rose-200">
                 {errorMessage}
               </p>
-              <div className="pt-2">
-                <Link to="/login">
+              <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                <Link to="/forgot-password" className="flex-1">
+                  <Button size="md" variant="outline" className="w-full">
+                    Forgot Password
+                  </Button>
+                </Link>
+                <Link to="/login" className="flex-1">
                   <Button size="md" className="w-full" rightIcon={<ArrowRight className="w-4 h-4" />}>
-                    Proceed to Sign In
+                    Sign In
                   </Button>
                 </Link>
               </div>

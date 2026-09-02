@@ -24,8 +24,25 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = ""
     # Supabase Project JWT Secret (from Supabase Dashboard -> Settings -> API -> JWT Settings)
     SUPABASE_JWT_SECRET: Optional[str] = None
-    # Backward-compatible secret key / service role key
+    # Supabase service-role key (used ONLY in backend — never exposed to frontend)
     SUPABASE_SECRET_KEY: Optional[str] = None
+
+    # Frontend URL — used to construct redirect URLs in invitation emails
+    FRONTEND_URL: str = "http://localhost:5173"
+
+    # Application Email Sender Configuration (Set ONCE in backend environment)
+    EMAIL_FROM_ADDRESS: str = "srinithi@gmail.com"
+    EMAIL_FROM_NAME: str = "DataCaliper Training Platform"
+
+    # Email provider type: "smtp" (default), "console", etc.
+    EMAIL_PROVIDER: str = "smtp"
+
+    # SMTP configuration for email delivery
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_USE_TLS: bool = True
 
     # CORS configuration
     BACKEND_CORS_ORIGINS: Union[str, List[str]] = [

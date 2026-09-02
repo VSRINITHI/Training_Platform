@@ -1,5 +1,6 @@
 import uuid
 import logging
+from datetime import datetime, timezone
 from typing import Callable, Generator, List, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -91,6 +92,10 @@ def get_current_user(
             db.commit()
             db.refresh(user)
             logger.info(f"Synchronized new user profile for ID: {user_id}")
+
+            # Mark any pending invitation for this email as ACCEPTED
+            _accept_invitation_if_pending(db, email)
+
         except IntegrityError:
             # Handle concurrent creation race condition
             db.rollback()
@@ -125,7 +130,96 @@ def get_current_user(
             db.commit()
             db.refresh(user)
 
+        # Also accept any pending invitation for existing users on sync
+        _accept_invitation_if_pending(db, email)
+
+    # Clean up stale app_metadata flags.
+    # supabase.auth.updateUser() from the client can only modify user_metadata,
+    # not app_metadata. After SetPasswordPage clears needs_password in
+    # user_metadata, app_metadata still has the old flags. Use the server-side
+    # admin API to clean them up so subsequent JWTs are fully consistent.
+    app_needs_pw = app_metadata.get("needs_password")
+    app_is_invited = app_metadata.get("is_invited")
+    user_needs_pw = user_metadata.get("needs_password")
+
+    if (app_needs_pw is True or app_is_invited is True) and user_needs_pw is False:
+        _clear_stale_app_metadata(str(user_id))
+
     return user
+
+
+def _accept_invitation_if_pending(db: Session, email: str) -> None:
+    """
+    When a new user is successfully created in public.users,
+    check if a pending invitation exists for their email and mark it ACCEPTED.
+    Imported lazily to avoid circular imports with the invitation model.
+    """
+    try:
+        # Lazy import to avoid circular dependency at module load time
+        from app.models.invitation import UserInvitation
+        now = datetime.now(timezone.utc)
+        pending = (
+            db.query(UserInvitation)
+            .filter(
+                UserInvitation.email == email.lower(),
+                UserInvitation.status == "PENDING",
+            )
+            .first()
+        )
+        if pending:
+            pending.status = "ACCEPTED"
+            pending.accepted_at = now
+            db.commit()
+            logger.info("Invitation ACCEPTED for email: %s (invitation id: %s)", email, pending.id)
+    except Exception as e:
+        # Never block authentication due to invitation bookkeeping errors
+        logger.warning("Could not update invitation status for %s: %s", email, e)
+
+
+def _clear_stale_app_metadata(user_id: str) -> None:
+    """
+    Uses the Supabase Admin API (server-side service-role key) to remove
+    stale needs_password and is_invited flags from app_metadata.
+
+    This is needed because supabase.auth.updateUser() from the client SDK
+    can only modify user_metadata, not app_metadata. After the user sets
+    their password (clearing user_metadata.needs_password), app_metadata
+    still has the old flags. This function cleans them up so that future
+    JWTs no longer carry stale invitation flags.
+
+    This function is fire-and-forget — failures are logged but never block
+    the authentication flow.
+    """
+    try:
+        from app.core.config import settings
+        import httpx
+
+        key = settings.SUPABASE_SECRET_KEY
+        if not key:
+            return
+
+        headers = {
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        url = f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}"
+        body = {
+            "app_metadata": {
+                "needs_password": False,
+                "is_invited": False,
+            },
+        }
+        r = httpx.put(url, headers=headers, json=body, timeout=10)
+        if r.status_code in (200, 201):
+            logger.info("Cleared stale app_metadata flags for user %s", user_id)
+        else:
+            logger.warning(
+                "Failed to clear app_metadata for user %s: status=%d body=%s",
+                user_id, r.status_code, r.text[:200],
+            )
+    except Exception as e:
+        logger.warning("Could not clear stale app_metadata for %s: %s", user_id, e)
 
 
 def require_role(*allowed_roles: UserRole) -> Callable[[User], User]:

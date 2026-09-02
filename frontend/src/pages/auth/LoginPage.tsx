@@ -138,16 +138,12 @@ export const LoginPage: React.FC = () => {
 
             <div className="flex items-center justify-between text-xs pt-1">
               <span className="text-charcoal-muted">Protected by Supabase Auth</span>
-              <a
-                href="#forgot"
-                onClick={(e) => {
-                  e.preventDefault();
-                  alert('Password reset instructions will be sent to your registered email.');
-                }}
+              <Link
+                to="/forgot-password"
                 className="font-medium text-primary hover:text-primary-hover hover:underline"
               >
                 Forgot password?
-              </a>
+              </Link>
             </div>
 
             <Button

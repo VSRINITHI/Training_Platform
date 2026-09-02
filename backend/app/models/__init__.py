@@ -1,4 +1,4 @@
-﻿from app.models.enums import (
+from app.models.enums import (
     UserRole,
     DifficultyLevel,
     QuizType,
@@ -13,6 +13,7 @@ from app.models.course import Course, Module, Lesson
 from app.models.quiz import Quiz, Question, QuestionOption, AIQuizDraft
 from app.models.enrollment import Enrollment, ModuleProgress, LessonProgress
 from app.models.assessment import QuizAttempt, Certificate
+from app.models.invitation import UserInvitation
 
 __all__ = [
     # Enums
@@ -23,7 +24,7 @@ __all__ = [
     "AIDraftStatus",
     "EnrollmentStatus",
     "ModuleProgressStatus",
-    # Models (16)
+    # Models (17)
     "User",
     "Domain",
     "SubDomain",
@@ -40,4 +41,5 @@ __all__ = [
     "LessonProgress",
     "QuizAttempt",
     "Certificate",
+    "UserInvitation",
 ]

@@ -12,7 +12,9 @@ import { AdminLayout } from '../layouts/AdminLayout';
 import { LandingPage } from '../pages/learner/LandingPage';
 import { LoginPage } from '../pages/auth/LoginPage';
 import { RegisterPage } from '../pages/auth/RegisterPage';
+import { ForgotPasswordPage } from '../pages/auth/ForgotPasswordPage';
 import { AuthCallbackPage } from '../pages/auth/AuthCallbackPage';
+import { SetPasswordPage } from '../pages/auth/SetPasswordPage';
 
 // Learner Pages
 import { LearnerDashboardPage } from '../pages/learner/LearnerDashboardPage';
@@ -61,7 +63,9 @@ export const AppRoutes: React.FC = () => {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      <Route path="/set-password" element={<SetPasswordPage />} />
 
       {/* Learner Portal */}
       <Route
